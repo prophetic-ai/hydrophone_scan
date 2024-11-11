@@ -122,56 +122,56 @@ class HardwareController:
             self.scope.close()
 
 
-def test_all():
-    """Test both movement and measurements"""
-    try:
-        controller = HardwareController(
-            arduino_port='/dev/tty.usbmodem101',
-            scope_address='USB0::0x0699::0x03A0::C014274::INSTR'
-        )
+# def test_all():
+#     """Test both movement and measurements"""
+#     try:
+#         controller = HardwareController(
+#             arduino_port='/dev/tty.usbmodem101',
+#             scope_address='USB0::0x0699::0x03A0::C014274::INSTR'
+#         )
         
-        print("\nHydrophone Test System")
-        print("---------------------")
-        print("Commands:")
-        print("  move x+/x-/y+/y-/z+/z- <distance>  - Move axis by distance in mm")
-        print("  measure                             - Take scope measurement")
-        print("  q                                   - Quit")
+#         print("\nHydrophone Test System")
+#         print("---------------------")
+#         print("Commands:")
+#         print("  move x+/x-/y+/y-/z+/z- <distance>  - Move axis by distance in mm")
+#         print("  measure                             - Take scope measurement")
+#         print("  q                                   - Quit")
         
-        while True:
-            cmd = input("\nEnter command: ").lower().split()
-            if not cmd:
-                continue
+#         while True:
+#             cmd = input("\nEnter command: ").lower().split()
+#             if not cmd:
+#                 continue
                 
-            if cmd[0] == 'q':
-                break
+#             if cmd[0] == 'q':
+#                 break
                 
-            if cmd[0] == 'measure':
-                pos_peak, neg_peak = controller.get_measurement()
-                print(f"Measurement: Positive peak: {pos_peak:.3f}V, Negative peak: {neg_peak:.3f}V")
-                continue
+#             if cmd[0] == 'measure':
+#                 pos_peak, neg_peak = controller.get_measurement()
+#                 print(f"Measurement: Positive peak: {pos_peak:.3f}V, Negative peak: {neg_peak:.3f}V")
+#                 continue
                 
-            if cmd[0] == 'move' and len(cmd) == 3:
-                direction = cmd[1]
-                distance = float(cmd[2])
-                axis = direction[0]
+#             if cmd[0] == 'move' and len(cmd) == 3:
+#                 direction = cmd[1]
+#                 distance = float(cmd[2])
+#                 axis = direction[0]
                 
-                if direction[1] == '-':
-                    distance = -distance
+#                 if direction[1] == '-':
+#                     distance = -distance
                     
-                if controller.move_axis(axis, distance):
-                    print(f"Moved {axis} axis by {distance}mm")
-                    time.sleep(0.5)
-                else:
-                    print("Movement failed")
-            else:
-                print("Invalid command")
+#                 if controller.move_axis(axis, distance):
+#                     print(f"Moved {axis} axis by {distance}mm")
+#                     time.sleep(0.5)
+#                 else:
+#                     print("Movement failed")
+#             else:
+#                 print("Invalid command")
                 
-    except ConnectionError as e:
-        print(f"Connection error: {e}")
-    finally:
-        if 'controller' in locals():
-            controller.close()
-        print("\nTest completed - connections closed")
+#     except ConnectionError as e:
+#         print(f"Connection error: {e}")
+#     finally:
+#         if 'controller' in locals():
+#             controller.close()
+#         print("\nTest completed - connections closed")
 
-if __name__ == "__main__":
-    test_all()
+# if __name__ == "__main__":
+#     test_all()

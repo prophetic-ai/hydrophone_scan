@@ -1,0 +1,24 @@
+# Hardware connection settings
+hardware:
+  arduino_port: "/dev/tty.usbmodem101"  # Arduino serial port
+  scope_address: "USB0::0x0699::0x03A0::C014274::INSTR"  # Oscilloscope VISA address
+  baud_rate: 115200  # Arduino baud rate
+
+# Scan parameters
+scan:
+  type: "2d_xy"  # Scan type: 1d_x, 1d_y, 1d_z, 2d_xy, 2d_xz, 2d_yz
+  dimensions:
+    x: 10  # X dimension in mm (0 when not used)
+    y: 10  # Y dimension in mm (0 when not used)
+    z: 0   # Z dimension in mm (0 when not used)
+    resolution: 0.5  # Scan resolution in mm
+  
+  calibration_value: 1.0  # Hydrophone calibration in V/MPa
+  save_raw_waveforms: false  # Whether to save full waveform data
+  base_path: "./data"  # Base directory for saving scan data
+
+# Oscilloscope settings
+oscilloscope:
+  vertical_scale:
+    initial: 0.1  # Initial vertical scale in V/div
+    min: 0.02  # Minimum vertical scale (20mV)
