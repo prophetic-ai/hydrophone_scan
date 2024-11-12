@@ -126,7 +126,7 @@ class HardwareController:
 #     """Test both movement and measurements"""
 #     try:
 #         controller = HardwareController(
-#             arduino_port='/dev/tty.usbmodem101',
+#             arduino_port='/dev/tty.usbmodem1101',
 #             scope_address='USB0::0x0699::0x03A0::C014274::INSTR'
 #         )
         

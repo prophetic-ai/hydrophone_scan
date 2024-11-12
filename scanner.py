@@ -149,12 +149,18 @@ class ScanController:
         secondary_axis = axes[1]
         
         # Calculate steps for each axis
-        primary_steps = int(dimensions[f'{primary_axis}_range'] / dimensions['resolution'])
-        secondary_steps = int(dimensions[f'{secondary_axis}_range'] / dimensions['resolution'])
+        # primary_steps = int(dimensions[f'{primary_axis}_range'] / dimensions['resolution'])
+        # secondary_steps = int(dimensions[f'{secondary_axis}_range'] / dimensions['resolution'])
         
         # Move to start position (negative half of both ranges)
-        self._move_relative(primary_axis, -dimensions[f'{primary_axis}_range'] / 2)
-        self._move_relative(secondary_axis, -dimensions[f'{secondary_axis}_range'] / 2)
+        # self._move_relative(primary_axis, -dimensions[f'{primary_axis}_range'] / 2)
+        # self._move_relative(secondary_axis, -dimensions[f'{secondary_axis}_range'] / 2)
+
+
+        primary_steps = int(dimensions[primary_axis] / dimensions['resolution'])
+        secondary_steps = int(dimensions[secondary_axis] / dimensions['resolution'])
+        self._move_relative(primary_axis, -dimensions[primary_axis] / 2)
+        self._move_relative(secondary_axis, -dimensions[secondary_axis] / 2)
         time.sleep(0.2)
         
         # Execute serpentine scan pattern
