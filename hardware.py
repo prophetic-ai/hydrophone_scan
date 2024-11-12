@@ -43,17 +43,38 @@ class HardwareController:
             raise ConnectionError(f"Failed to connect to Arduino: {e}")
         
         # Scope setup
+        # if self.scope_address:
+        #     try:
+        #         rm = pyvisa.ResourceManager()
+        #         self.scope = rm.open_resource(self.scope_address)
+        #         self.scope.timeout = 10000  # 10 seconds timeout
+                
+        #         # Basic scope setup
+        #         self.scope.write('*RST')  # Reset scope
+        #         self.scope.write('DATA:SOURCE CH1')  # Set channel 1 as source
+        #         self.scope.write('DATA:WIDTH 1')  # Set data width
+        #         self.scope.write('DATA:ENC RPB')  # Set encoding to positive binary
+                
+        #     except Exception as e:
+        #         raise ConnectionError(f"Failed to connect to oscilloscope: {e}")
+
         if self.scope_address:
             try:
                 rm = pyvisa.ResourceManager()
                 self.scope = rm.open_resource(self.scope_address)
                 self.scope.timeout = 10000  # 10 seconds timeout
                 
-                # Basic scope setup
-                self.scope.write('*RST')  # Reset scope
+                # Configure scope with optimal settings
+                self.scope.write('*RST')  # Reset first
+                self.scope.write('TRIG:SOURCE EXT')  # External trigger source
+                self.scope.write('TRIG:TYPE EDGE')   # Edge trigger type
+                self.scope.write('TRIG:SLOPE RISing')  # Rising edge
+                self.scope.write('TRIG:MODE AUTO')  # Auto trigger mode
+                self.scope.write('TRIG:COUPLING DC')  # DC coupling for trigger
+                self.scope.write('CH1:SCALE 0.05')  # 50mV vertical scale
                 self.scope.write('DATA:SOURCE CH1')  # Set channel 1 as source
-                self.scope.write('DATA:WIDTH 1')  # Set data width
-                self.scope.write('DATA:ENC RPB')  # Set encoding to positive binary
+                self.scope.write('DATA:WIDTH 1')     # Set data width
+                self.scope.write('DATA:ENC RPB')     # Set encoding to positive binary
                 
             except Exception as e:
                 raise ConnectionError(f"Failed to connect to oscilloscope: {e}")
@@ -82,74 +103,56 @@ class HardwareController:
             return False
 
     def get_measurement(self) -> tuple[float, float]:
-        """
-        Get single measurement from scope with active vertical scaling
-        Returns: (peak_positive, peak_negative) in Volts
-        """
+        """Get single measurement from scope with MATLAB-like vertical scaling"""
         if not self.scope:
             raise ConnectionError("Oscilloscope not connected")
             
         try:
-            # Constants for scaling
-            UPPER_LIMIT = 90  # Upper digitizer level limit
-            LOWER_LIMIT = 20  # Lower digitizer level limit
-            ROUND_BIN = 20e-3  # 20mV rounding bin
+            # Clear oscilloscope status
+            self.scope.write('*CLS')
             
-            while True:
-                # Clear scope status
-                self.scope.write('*CLS')
-                
-                # Request waveform data
-                self.scope.write('CURVE?')
-                
-                # Read raw binary data
-                raw_wave = self.scope.query_binary_values('CURVE?', datatype='b', container=np.array)
-                
-                # Get current vertical scale and offset
-                volts_per_div = float(self.scope.query("CH1:Scale?"))
-                y_offset = float(self.scope.query("WFMPRe:YOFf?"))
-                
-                # Calculate raw min/max
-                raw_max = np.max(raw_wave)
-                raw_min = np.min(raw_wave)
-                
-                # Check if scaling needed
-                scaling_needed = (raw_max > UPPER_LIMIT or raw_max < LOWER_LIMIT or 
-                                abs(raw_min) > UPPER_LIMIT or abs(raw_min) < LOWER_LIMIT)
-                
-                # Only continue scaling if above minimum voltage scale
-                scaling_condition = scaling_needed and volts_per_div > ROUND_BIN
-                
-                if not scaling_condition:
-                    break
-                    
-                # Calculate new scale
+            # Get waveform
+            self.scope.write('CURVE?')
+            raw_wave = self.scope.query_binary_values('CURVE?', datatype='b', container=np.array)
+            
+            # Get current settings
+            volts_per_div = float(self.scope.query("CH1:Scale?"))
+            y_offset = float(self.scope.query("WFMPRe:YOFf?"))
+            
+            # Calculate raw min/max
+            raw_max = np.max(raw_wave)
+            raw_min = np.min(raw_wave)
+            
+            # MATLAB-like scaling thresholds
+            UPPER_LIMIT = 90
+            LOWER_LIMIT = 20
+            ROUND_BIN = 20e-3  # 20mV
+            
+            # Check if scaling needed
+            scaling_needed = (raw_max > UPPER_LIMIT or raw_max < LOWER_LIMIT or 
+                            abs(raw_min) > UPPER_LIMIT or abs(raw_min) < LOWER_LIMIT)
+            
+            if scaling_needed and volts_per_div > ROUND_BIN:
+                raw_scaler = np.mean([raw_max, abs(raw_min)])
                 if raw_max > UPPER_LIMIT or abs(raw_min) > UPPER_LIMIT:
-                    # Signal too large
-                    raw_scaler = np.mean([raw_max, abs(raw_min)])
                     new_scale = volts_per_div * raw_scaler / UPPER_LIMIT
                     new_scale = np.ceil(new_scale / ROUND_BIN) * ROUND_BIN
                 else:
-                    # Signal too small
-                    raw_scaler = np.mean([raw_max, abs(raw_min)])
                     new_scale = volts_per_div * raw_scaler / LOWER_LIMIT
                     new_scale = np.floor(new_scale / ROUND_BIN) * ROUND_BIN
-                    
-                # Apply new scale
+                
                 self.scope.write(f'CH1:Scale {new_scale}')
-                time.sleep(0.1)  # Allow scope to settle
+                time.sleep(0.2)  # Let scope settle
+                return self.get_measurement()  # Recursive call with new scale
             
-            # Get final measurements after scaling is complete
+            # Get measurements
             self.scope.write('MEASUREMENT:IMMED:TYPE PK2PK')
-            self.scope.write('MEASUREMENT:IMMED:SOURCE CH1')
             pk2pk = float(self.scope.query('MEASUREMENT:IMMED:VALUE?'))
             
             self.scope.write('MEASUREMENT:IMMED:TYPE MINIMUM')
             min_val = float(self.scope.query('MEASUREMENT:IMMED:VALUE?'))
             
-            max_val = min_val + pk2pk
-            
-            return (max_val, min_val)
+            return (min_val + pk2pk, min_val)
             
         except Exception as e:
             logging.error(f"Measurement error: {e}")

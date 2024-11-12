@@ -25,8 +25,9 @@ class HydrophoneScanner:
                 scope_address=self.config['hardware']['scope_address']
             )
             
-            self.scanner = ScanController(self.hardware)
             self.processor = DataProcessor(self.config)
+            # Pass processor to scanner for visualization
+            self.scanner = ScanController(self.hardware, self.processor)
             
         except Exception as e:
             logging.error(f"Initialization failed: {e}")
