@@ -1,6 +1,5 @@
 # main.py
 """
-Hydrophone Scanner - Main Control Script
 Handles scan execution and user interaction with minimal complexity.
 """
 
