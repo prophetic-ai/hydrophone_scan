@@ -1,5 +1,5 @@
 hardware:
-  arduino_port: '/dev/tty.usbmodem1101'  # or 'COMX' for Windows
+  arduino_port: '/dev/tty.usbmodem1101'  # or 'COM3' for Windows
   scope_address: 'USB0::0x0699::0x03A0::C014274::INSTR'
   steps_per_mm:
     x: 100  # 0.01mm per step
@@ -9,9 +9,9 @@ hardware:
 scan:
   type: '2d_xy'  # Options: 1d_x, 1d_y, 1d_z, 2d_xy, 2d_xz, 2d_yz
   dimensions:
-    x: 9  # mm
-    y: 9  # mm
+    x: 30  # mm
+    y: 15  # mm
     z: 0   # mm
-    resolution: 0.5  # mm
+    resolution: 0.25  # mm
   calibration_value: 0.3112  # V/MPa
   base_path: './scan_data'
