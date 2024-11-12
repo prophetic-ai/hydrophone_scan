@@ -4,6 +4,7 @@ Data processing and visualization for Hydrophone Scanner
 
 import numpy as np
 import matplotlib
+matplotlib.use('Agg')  # Use Agg backend to avoid display issues
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 import os
@@ -19,22 +20,6 @@ class DataProcessor:
         self.dimensions = config['scan']['dimensions']
         self.base_path = config['scan']['base_path']
         
-        # Remove Agg backend to allow real-time plotting
-        if matplotlib.get_backend() == 'Agg':
-            matplotlib.use('TkAgg')
-
-    def calculate_matrix_dimensions(self) -> Tuple[int, int]:
-        """Calculate matrix dimensions based on scan type"""
-        if self.scan_type.startswith('1d'):
-            axis = self.scan_type[-1]
-            size = int(self.dimensions[axis] / self.dimensions['resolution'])
-            return (size, 1)
-        else:
-            axes = self.scan_type[-2:]
-            size_x = int(self.dimensions[axes[0]] / self.dimensions['resolution'])
-            size_y = int(self.dimensions[axes[1]] / self.dimensions['resolution'])
-            return (size_y, size_x)
-            
     def _convert_to_pressure(self, voltage: float) -> float:
         """Convert voltage to pressure (MPa)"""
         return voltage / self.calibration_value
@@ -88,36 +73,19 @@ class DataProcessor:
             return fwhm
         return None
 
-    def get_scan_extent(self) -> List[float]:
-        """Get plot extent in physical units"""
-        if self.scan_type.startswith('1d'):
-            axis = self.scan_type[-1]
-            size = self.dimensions[axis]
-            return [-size/2, size/2]
-        else:
-            axes = self.scan_type[-2:]
-            x_size = self.dimensions[axes[0]]
-            y_size = self.dimensions[axes[1]]
-            return [-x_size/2, x_size/2, -y_size/2, y_size/2]
-
     def _save_plots(self, pos_map: np.ndarray, neg_map: np.ndarray, save_path: str) -> None:
-        """Generate and save final pressure map plots"""
-        # Switch to Agg backend for file saving
-        current_backend = matplotlib.get_backend()
-        matplotlib.use('Agg')
-        
+        """Generate and save pressure map plots"""
         if pos_map.ndim == 1:  # 1D plot
+            # Create figure for 1D plots
             plt.figure(figsize=(10, 8))
-            extent = self.get_scan_extent()
             
             # Positive pressure subplot
             plt.subplot(2, 1, 1)
-            x = np.linspace(extent[0], extent[1], len(pos_map))
+            x = np.arange(len(pos_map)) * self.dimensions['resolution']
             plt.plot(x, pos_map, 'b-')
             plt.title('Peak Positive Pressure')
             plt.xlabel('Position (mm)')
             plt.ylabel('Pressure (MPa)')
-            plt.grid(True)
             
             # Add FWHM if calculable
             fwhm = self._calculate_fwhm(pos_map)
@@ -131,11 +99,14 @@ class DataProcessor:
             plt.title('Peak Negative Pressure')
             plt.xlabel('Position (mm)')
             plt.ylabel('Pressure (MPa)')
-            plt.grid(True)
             
         else:  # 2D plot
+            # Create figure for 2D plots
             fig = plt.figure(figsize=(15, 6))
-            extent = self.get_scan_extent()
+            
+            # Calculate extent for proper scaling
+            extent = [0, pos_map.shape[1] * self.dimensions['resolution'],
+                     0, pos_map.shape[0] * self.dimensions['resolution']]
             
             # Positive pressure plot
             plt.subplot(1, 2, 1)
@@ -162,9 +133,6 @@ class DataProcessor:
         plt.tight_layout()
         plt.savefig(os.path.join(save_path, 'pressure_maps.png'), dpi=300, bbox_inches='tight')
         plt.close()
-        
-        # Restore original backend
-        matplotlib.use(current_backend)
 
     def process_and_save(self, data: List[Dict], scan_id: str) -> None:
         """Process and save scan data with visualizations"""
