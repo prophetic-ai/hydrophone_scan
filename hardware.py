@@ -8,7 +8,7 @@ import time
 import logging
 from typing import Dict
 import pyvisa
-
+import numpy as np
 
 class HardwareController:
     MM_PER_STEP: Dict[str, float] = {
@@ -58,7 +58,6 @@ class HardwareController:
             except Exception as e:
                 raise ConnectionError(f"Failed to connect to oscilloscope: {e}")
 
-
     def move_axis(self, axis: str, distance: float) -> bool:
         """Move specified axis by given distance"""
         if axis not in self.MM_PER_STEP:
@@ -82,37 +81,79 @@ class HardwareController:
             print(f"Movement error: {e}")
             return False
 
-
-
     def get_measurement(self) -> tuple[float, float]:
         """
-        Get single measurement from scope
+        Get single measurement from scope with active vertical scaling
         Returns: (peak_positive, peak_negative) in Volts
         """
         if not self.scope:
             raise ConnectionError("Oscilloscope not connected")
             
         try:
-            # Get scope measurements
+            # Constants for scaling
+            UPPER_LIMIT = 90  # Upper digitizer level limit
+            LOWER_LIMIT = 20  # Lower digitizer level limit
+            ROUND_BIN = 20e-3  # 20mV rounding bin
+            
+            while True:
+                # Clear scope status
+                self.scope.write('*CLS')
+                
+                # Request waveform data
+                self.scope.write('CURVE?')
+                
+                # Read raw binary data
+                raw_wave = self.scope.query_binary_values('CURVE?', datatype='b', container=np.array)
+                
+                # Get current vertical scale and offset
+                volts_per_div = float(self.scope.query("CH1:Scale?"))
+                y_offset = float(self.scope.query("WFMPRe:YOFf?"))
+                
+                # Calculate raw min/max
+                raw_max = np.max(raw_wave)
+                raw_min = np.min(raw_wave)
+                
+                # Check if scaling needed
+                scaling_needed = (raw_max > UPPER_LIMIT or raw_max < LOWER_LIMIT or 
+                                abs(raw_min) > UPPER_LIMIT or abs(raw_min) < LOWER_LIMIT)
+                
+                # Only continue scaling if above minimum voltage scale
+                scaling_condition = scaling_needed and volts_per_div > ROUND_BIN
+                
+                if not scaling_condition:
+                    break
+                    
+                # Calculate new scale
+                if raw_max > UPPER_LIMIT or abs(raw_min) > UPPER_LIMIT:
+                    # Signal too large
+                    raw_scaler = np.mean([raw_max, abs(raw_min)])
+                    new_scale = volts_per_div * raw_scaler / UPPER_LIMIT
+                    new_scale = np.ceil(new_scale / ROUND_BIN) * ROUND_BIN
+                else:
+                    # Signal too small
+                    raw_scaler = np.mean([raw_max, abs(raw_min)])
+                    new_scale = volts_per_div * raw_scaler / LOWER_LIMIT
+                    new_scale = np.floor(new_scale / ROUND_BIN) * ROUND_BIN
+                    
+                # Apply new scale
+                self.scope.write(f'CH1:Scale {new_scale}')
+                time.sleep(0.1)  # Allow scope to settle
+            
+            # Get final measurements after scaling is complete
             self.scope.write('MEASUREMENT:IMMED:TYPE PK2PK')
             self.scope.write('MEASUREMENT:IMMED:SOURCE CH1')
-            
-            # Get peak-to-peak measurement
             pk2pk = float(self.scope.query('MEASUREMENT:IMMED:VALUE?'))
             
-            # Get minimum value (negative peak)
             self.scope.write('MEASUREMENT:IMMED:TYPE MINIMUM')
             min_val = float(self.scope.query('MEASUREMENT:IMMED:VALUE?'))
             
-            # Calculate positive peak
             max_val = min_val + pk2pk
             
             return (max_val, min_val)
             
         except Exception as e:
-            print(f"Measurement error: {e}")
+            logging.error(f"Measurement error: {e}")
             return (0.0, 0.0)
-
 
     def close(self):
         """Close hardware connections"""
