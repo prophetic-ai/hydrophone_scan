@@ -9,6 +9,7 @@ import logging
 import numpy as np
 from typing import Dict, Tuple
 import pyvisa
+from tqdm import tqdm
 
 class HardwareController:
     MM_PER_STEP: Dict[str, float] = {
@@ -28,11 +29,16 @@ class HardwareController:
         self.LOWER_LIMIT = 20  
         self.ROUND_BIN = 20e-3  # 20mV
         
+        # Track current scale to avoid unnecessary logging
+        self.current_scale = 0.1  # Start at 100mV/div
+        self.last_scale_change = 0  # Time of last scale change
+        
         self._setup_connections()
 
     def _setup_connections(self) -> None:
         """Establish hardware connections"""
         try:
+            print("\nConnecting to Arduino...")
             self.arduino = serial.Serial(
                 port=self.arduino_port,
                 baudrate=115200,
@@ -43,18 +49,17 @@ class HardwareController:
             response = self.arduino.readline().decode().strip()
             if not "Arduino is ready" in response:
                 raise ConnectionError("Arduino not responding correctly")
+            print("Arduino connected successfully")
                 
         except serial.SerialException as e:
             raise ConnectionError(f"Failed to connect to Arduino: {e}")
-        
 
         if self.scope_address:
             try:
+                print("\nConnecting to oscilloscope...")
                 rm = pyvisa.ResourceManager()
                 self.scope = rm.open_resource(self.scope_address)
                 self.scope.timeout = 30000
-                
-                logging.info("Starting scope initialization...")
                 
                 # Reset and clear
                 self.scope.write('*RST')
@@ -64,8 +69,9 @@ class HardwareController:
                 
                 # Verify basic communication
                 idn = self.scope.query('*IDN?')
-                logging.info(f"Connected to scope: {idn}")
+                print(f"Connected to scope: {idn}")
                 
+                print("Configuring scope settings...")
                 # Setup commands matching MATLAB exactly
                 commands = [
                     # Channel setup
@@ -73,12 +79,12 @@ class HardwareController:
                     'CH1:SCALE 1.0',
                     'CH1:POSITION 0',
                     
-                    # Trigger setup - matching MATLAB exactly
+                    # Trigger setup
                     'TRIG:SOURCE EXT',
                     'TRIG:TYPE EDGE',
                     'TRIG:SLOPE RISing',
                     'TRIG:MODE AUTO',
-                    'TRIG:COUPLING AC',  # Changed to AC coupling!
+                    'TRIG:COUPLING AC',
                     
                     # Data acquisition setup
                     'DATA:SOURCE CH1',
@@ -87,25 +93,12 @@ class HardwareController:
                 ]
                 
                 for cmd in commands:
-                    logging.info(f"Sending command: {cmd}")
                     self.scope.write(cmd)
                     time.sleep(0.5)
                 
-                # # Verify settings
-                # try:
-                #     coupling = self.scope.query('CH1:COUPLING?')
-                #     logging.info(f"Channel coupling: {coupling.strip()}")
+                print("Scope configuration complete")
                     
-                #     trig_coupling = self.scope.query('TRIG:COUPLING?')
-                #     logging.info(f"Trigger coupling: {trig_coupling.strip()}")
-                    
-                #     scale = self.scope.query('CH1:SCALE?')
-                #     logging.info(f"Vertical scale: {scale.strip()}")
-                # except:
-                #     logging.warning("Could not verify all settings, but continuing...")
-                
             except Exception as e:
-                logging.error(f"Scope setup error: {str(e)}")
                 raise ConnectionError(f"Failed to connect to oscilloscope: {str(e)}")
 
     def move_axis(self, axis: str, distance: float) -> bool:
@@ -122,9 +115,8 @@ class HardwareController:
             return True
                 
         except serial.SerialException as e:
-            logging.error(f"Movement error: {e}")
+            tqdm.write(f"Movement error: {e}")
             return False
-
 
     def get_measurement(self) -> Tuple[float, float]:
         """Get single measurement from scope with voltage-based scaling"""
@@ -132,9 +124,8 @@ class HardwareController:
             raise ConnectionError("Oscilloscope not connected")
             
         try:
-            # Start at 100mV/div
-            current_scale = 0.1
-            self.scope.write(f'CH1:SCALE {current_scale}')
+            # Set initial scale if needed
+            self.scope.write(f'CH1:SCALE {self.current_scale}')
             time.sleep(0.1)
             
             # Get initial reading
@@ -153,11 +144,27 @@ class HardwareController:
             
             # Only rescale if really necessary
             peak_to_peak = max_v - min_v
+            new_scale = None
             
-            if peak_to_peak > 0.8 * current_scale * 8:  # Using >80% of display
-                current_scale = min(1.0, current_scale * 2)  # Don't go above 1V/div
-                logging.info(f"Signal too large, scale -> {current_scale:.3f}V/div")
-                self.scope.write(f"CH1:Scale {current_scale}")
+            # Check if we need to change scale
+            if peak_to_peak > 0.8 * self.current_scale * 8:  # Using >80% of display
+                new_scale = min(1.0, self.current_scale * 2)  # Don't go above 1V/div
+            elif peak_to_peak < 0.1 * self.current_scale * 8 and self.current_scale > 0.02:  # Using <10% of display
+                new_scale = max(0.02, self.current_scale * 0.5)  # Don't go below 20mV/div
+                
+            # Apply new scale if needed
+            if new_scale and new_scale != self.current_scale:
+                # Only log scale changes if they're not too frequent
+                current_time = time.time()
+                if current_time - self.last_scale_change > 1.0:  # Minimum 1 second between scale change messages
+                    if new_scale > self.current_scale:
+                        tqdm.write(f"Signal too large, scale -> {new_scale:.3f}V/div")
+                    else:
+                        tqdm.write(f"Signal too small, scale -> {new_scale:.3f}V/div")
+                    self.last_scale_change = current_time
+                
+                self.current_scale = new_scale
+                self.scope.write(f"CH1:Scale {self.current_scale}")
                 time.sleep(0.1)
                 
                 # Get new reading
@@ -170,31 +177,16 @@ class HardwareController:
                 wave_volts = (data - y_offset) * vert_scale
                 max_v = np.max(wave_volts)
                 min_v = np.min(wave_volts)
-                
-            elif peak_to_peak < 0.1 * current_scale * 8 and current_scale > 0.02:  # Using <10% of display
-                current_scale = max(0.02, current_scale * 0.5)  # Don't go below 20mV/div
-                logging.info(f"Signal too small, scale -> {current_scale:.3f}V/div")
-                self.scope.write(f"CH1:Scale {current_scale}")
-                time.sleep(0.1)
-                
-                # Get new reading
-                self.scope.write('CURVE?')
-                raw_wave = self.scope.read_raw()
-                header_length = 2 + int(raw_wave[1:2])
-                data = np.frombuffer(raw_wave[header_length:], dtype=np.int8)
-                y_offset = float(self.scope.query("WFMPre:YOFf?"))
-                vert_scale = float(self.scope.query("WFMPre:YMUlt?"))
-                wave_volts = (data - y_offset) * vert_scale
-                max_v = np.max(wave_volts)
-                min_v = np.min(wave_volts)
             
-            logging.info(f"Final measurement: {max_v:.3f}V to {min_v:.3f}V (scale: {current_scale:.3f}V/div)")
+            # Only log measurements in debug mode
+            if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                tqdm.write(f"Measurement: {max_v:.3f}V to {min_v:.3f}V (scale: {self.current_scale:.3f}V/div)")
+                
             return max_v, min_v
                 
         except Exception as e:
-            logging.error(f"Measurement error: {e}")
+            tqdm.write(f"Measurement error: {e}")
             return 0.0, 0.0
-
 
     def get_full_waveform(self) -> Tuple[np.ndarray, np.ndarray]:
         """Get complete waveform with time values"""
@@ -202,7 +194,6 @@ class HardwareController:
             raise ConnectionError("Oscilloscope not connected")
             
         try:
-            # Get data same as get_measurement
             self.scope.write('*CLS')
             self.scope.write('CURVE?')
             raw_wave = self.scope.read_raw()
@@ -224,13 +215,15 @@ class HardwareController:
             return time_array, voltage_array
             
         except Exception as e:
-            logging.error(f"Waveform acquisition error: {e}")
+            tqdm.write(f"Waveform acquisition error: {e}")
             return None, None
 
     def close(self):
         """Close hardware connections"""
+        print("\nClosing hardware connections...")
         if self.arduino and self.arduino.is_open:
             self.arduino.close()
+            print("Arduino disconnected")
         if self.scope:
             self.scope.close()
-
+            print("Oscilloscope disconnected")
