@@ -1,6 +1,14 @@
 # Hydrophone Scanner System
 _**A Python Implementation for the Hydrophone — supports automated 1D and 2D scanning patterns with voltage scaling & data visualization.**_
 
+## Getting Started
+
+_Pull the repo and install requirements:_
+```bash
+git clone https://github.com/prophetic-ai/hydrophone_scan.git
+cd hydrophone-scanner
+pip install -r requirements.txt
+```
 
 ## Execution Pipeline
 
