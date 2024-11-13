@@ -1,6 +1,6 @@
 hardware:
   arduino_port: '/dev/tty.usbmodem101'  # or 'COM3' for Windows
-  scope_address: 'USB0::0x0699::0x03A0::C014274::INSTR'
+  scope_address: 'USB0::0xF4EC::0xEE38::SDSMMFCD5R1059::INSTR' #'USB0::0x0699::0x03A0::C014274::INSTR'
   steps_per_mm:
     x: 100  # 0.01mm per step
     y: 100
