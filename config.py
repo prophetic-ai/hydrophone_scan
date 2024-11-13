@@ -63,17 +63,3 @@ def load_config(config_path: str = "config.yaml") -> Dict:
         logging.error(f"Error loading config: {e}")
         raise
 
-# def test_config():
-#     """Test configuration loading with different scan types"""
-#     config = load_config()
-#     print("\nLoaded Configuration:")
-#     print(yaml.dump(config, sort_keys=False, default_flow_style=False))
-    
-#     print("\nValidation passed!")
-#     print(f"Scan type: {config['scan']['type']}")
-#     print(f"Dimensions: {config['scan']['dimensions']}")
-#     print(f"Calibration value: {config['scan']['calibration_value']} V/MPa")
-#     print(f"Save path: {config['scan']['base_path']}")
-
-# if __name__ == "__main__":
-#     test_config()
