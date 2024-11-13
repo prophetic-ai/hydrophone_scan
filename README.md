@@ -6,7 +6,7 @@ _**A Python Implementation for the Hydrophone — supports automated 1D and 2D s
 _Pull the repo and install requirements:_
 ```bash
 git clone https://github.com/prophetic-ai/hydrophone_scan.git
-cd hydrophone-scanner
+cd hydrophone_scan
 pip install -r requirements.txt
 ```
 
