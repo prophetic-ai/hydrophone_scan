@@ -12,11 +12,7 @@ import pyvisa
 from tqdm import tqdm
 import json
 class HardwareController:
-   MM_PER_STEP: Dict[str, float] = {
-       'x': 0.01,
-       'y': 0.01,
-       'z': 0.01
-   }
+   
    
    def __init__(self, arduino_port: str, scope_address: str = None, config: Dict = None):
        self.arduino_port = arduino_port
@@ -25,6 +21,13 @@ class HardwareController:
        self.arduino = None
        self.scope = None
        self.scope_type = None
+
+
+       self.MM_PER_STEP = {
+           'x': 1 / self.config['hardware']['steps_per_mm']['x'],
+           'y': 1 / self.config['hardware']['steps_per_mm']['y'],
+           'z': 1 / self.config['hardware']['steps_per_mm']['z']
+        }
        
        # Constants for vertical scaling
        self.UPPER_LIMIT = 90  
