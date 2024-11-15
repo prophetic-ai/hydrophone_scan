@@ -22,7 +22,8 @@ class HydrophoneScanner:
             
             self.hardware = HardwareController(
                 arduino_port=self.config['hardware']['arduino_port'],
-                scope_address=self.config['hardware']['scope_address']
+                scope_address=self.config['hardware']['scope_address'],
+                config=self.config
             )
             
             self.scanner = ScanController(self.hardware)
