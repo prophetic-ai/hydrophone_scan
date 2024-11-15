@@ -139,6 +139,10 @@ class DataProcessor:
         # Create scan directory
         scan_path = os.path.join(self.base_path, scan_id)
         os.makedirs(scan_path, exist_ok=True)
+
+        # Create waveform directory
+        waveforms_path = os.path.join(scan_path, 'waveforms')
+        os.makedirs(waveforms_path, exist_ok=True)
         
         # Process data
         pos_map, neg_map = self._create_pressure_map(data)
@@ -147,10 +151,27 @@ class DataProcessor:
         peak_pos = np.max(pos_map)
         peak_neg = np.min(neg_map)
         
-        # Save raw data
+        # Save waveforms
+        processed_data = []
+        for i, point in enumerate(data):
+            point_data = {
+                'position': point['position'],
+                'peaks': point['peaks']
+            }
+            processed_data.append(point_data)
+            
+            # Save waveform if it exists
+            if point.get('waveform') and point['waveform']['time'] is not None:
+                waveform_data = point['waveform']
+                waveform_data['position'] = point['position']
+                waveform_file = os.path.join(waveforms_path, f'point_{i}.json')
+                with open(waveform_file, 'w') as f:
+                    json.dump(waveform_data, f)
+        
+        # Save raw data (without waveforms to keep JSON manageable)
         raw_data = {
             'config': self.config,
-            'scan_data': data,
+            'scan_data': processed_data,
             'timestamp': datetime.now().isoformat(),
             'peak_positive': float(peak_pos),
             'peak_negative': float(peak_neg)
@@ -170,9 +191,9 @@ class DataProcessor:
         print(f"\nScan processed and saved to: {scan_path}")
         print(f"Peak Positive Pressure: {peak_pos:.2f} MPa")
         print(f"Peak Negative Pressure: {peak_neg:.2f} MPa")
+        print(f"Waveforms saved in: {waveforms_path}")
         
         if self.scan_type.startswith('2d'):
             fwhm = self._calculate_fwhm(pos_map)
             if fwhm:
                 print(f"FWHM: {fwhm:.2f} mm")
-

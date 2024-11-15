@@ -48,10 +48,20 @@ class ScanController:
     
     def _collect_datapoint(self) -> Tuple[float, float]:
         """
-        Collect a single datapoint
-        Returns: (peak_positive, peak_negative)
+        Collect peaks & waveform data for a current position
         """
-        return self.hardware.get_measurement()
+
+        peaks = self.hardware.get_measurement()
+        time_array, voltage_array = self.hardware.get_full_waveform()
+        
+        return {
+            'position': self.current_position.copy(),
+            'peaks': peaks,
+            'waveform': {
+            'time': time_array.tolist() if time_array is not None else None,
+            'voltage': voltage_array.tolist() if voltage_array is not None else None
+            }
+        } 
 
     def run_scan(self, scan_type, dimensions):
         """
@@ -85,10 +95,6 @@ class ScanController:
     def _run_1d_scan(self, axis: str, dimensions: Dict) -> None:
         """
         Execute 1D scan along specified axis
-        
-        Args:
-            axis: 'x', 'y', or 'z'
-            dimensions: dict with ranges and resolution
         """
         distance = dimensions[axis]
         step_size = dimensions['resolution']
@@ -103,17 +109,13 @@ class ScanController:
         # Execute scan with progress bar
         print(f"\nStarting {axis}-axis scan ({steps} points)...")
         with tqdm(total=steps, desc=f"Scanning {axis}-axis", 
-                 bar_format='{desc}: {percentage:3.1f}%|{bar:50}| {n_fmt}/{total_fmt} pts [{elapsed}<{remaining}]',
-                 ascii=False, ncols=120, leave=True) as pbar:
+                bar_format='{desc}: {percentage:3.1f}%|{bar:50}| {n_fmt}/{total_fmt} pts [{elapsed}<{remaining}]',
+                ascii=False, ncols=120, leave=True) as pbar:
             
             for i in range(steps):
-                # Collect data
-                pos_peak, neg_peak = self._collect_datapoint()
-                position = self.current_position.copy()
-                self.data.append({
-                    'position': position,
-                    'peaks': (pos_peak, neg_peak)
-                })
+                # Collect data - now includes waveform
+                point_data = self._collect_datapoint()
+                self.data.append(point_data)  # Add complete point data
                 
                 # Move to next position if not at end
                 if i < steps - 1:
@@ -125,10 +127,6 @@ class ScanController:
     def _run_2d_scan(self, axes: str, dimensions: Dict) -> None:
         """
         Execute 2D scan in specified plane
-        
-        Args:
-            axes: 'xy', 'xz', or 'yz'
-            dimensions: dict with ranges and resolution
         """
         primary_axis = axes[0]
         secondary_axis = axes[1]
@@ -148,8 +146,8 @@ class ScanController:
         print(f"\nStarting {axes}-plane scan ({total_points} points, {secondary_steps} rows)...")
         
         with tqdm(total=total_points, 
-                 desc=f"Scanning {axes}-plane",
-                 ncols=100) as pbar:
+                desc=f"Scanning {axes}-plane",
+                ncols=100) as pbar:
             
             for j in range(secondary_steps):
                 # Update description with current row
@@ -160,13 +158,9 @@ class ScanController:
                 
                 # Scan along primary axis
                 for i in range(primary_steps):
-                    # Collect data
-                    pos_peak, neg_peak = self._collect_datapoint()
-                    position = self.current_position.copy()
-                    self.data.append({
-                        'position': position,
-                        'peaks': (pos_peak, neg_peak)
-                    })
+                    # Collect data - now includes waveform
+                    point_data = self._collect_datapoint()
+                    self.data.append(point_data)  # Add complete point data
                     
                     # Move to next position if not at end of line
                     if i < primary_steps - 1:
@@ -178,4 +172,4 @@ class ScanController:
                 # Move along secondary axis if not at end of scan
                 if j < secondary_steps - 1:
                     self._move_relative(secondary_axis, dimensions['resolution'])
-                    time.sleep(0.1)
+                    time.sleep(0.1)    
