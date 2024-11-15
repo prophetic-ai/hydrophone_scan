@@ -18,9 +18,10 @@ class HardwareController:
        'z': 0.01
    }
    
-   def __init__(self, arduino_port: str, scope_address: str = None):
+   def __init__(self, arduino_port: str, scope_address: str = None, config: Dict = None):
        self.arduino_port = arduino_port
        self.scope_address = scope_address
+       self.config = config
        self.arduino = None
        self.scope = None
        self.scope_type = None
@@ -67,6 +68,9 @@ class HardwareController:
                time.sleep(2)
                self.scope.write('*CLS')
                time.sleep(1)
+
+               # Get scope settings from config
+               settings = self.config['hardware']['scope_settings']
                
                # Verify basic communication
                idn = self.scope.query('*IDN?')
@@ -76,19 +80,14 @@ class HardwareController:
                if 'TEKTRONIX' in idn.upper():
                    self.scope_type = 'TEKTRONIX'
                    commands = [
-                       # Channel setup
-                       'CH1:COUPLING AC',
-                       'CH1:SCALE 1.0',
-                       'CH1:POSITION 0',
-                       
-                       # Trigger setup
-                       'TRIG:SOURCE EXT',
-                       'TRIG:TYPE EDGE',
-                       'TRIG:SLOPE RISing',
-                       'TRIG:MODE AUTO',
-                       'TRIG:COUPLING AC',
-                       
-                       # Data acquisition setup
+                       f'CH1:COUPLING {settings["channel_coupling"]}',
+                       f'CH1:SCALE {settings["vertical_scale"]}',
+                       f'CH1:POSITION {settings["channel_position"]}',
+                       f'HOR:SCALE {settings["horizontal_scale"]}',
+                       f'TRIG:SOURCE {settings["trigger_source"]}',
+                       f'TRIG:SLOPE {settings["trigger_slope"]}',
+                       f'TRIG:MODE {settings["trigger_mode"]}',
+                       f'TRIG:COUPLING {settings["trigger_coupling"]}',
                        'DATA:SOURCE CH1',
                        'DATA:WIDTH 1',
                        'DATA:ENCDG RIBINARY'
@@ -97,13 +96,13 @@ class HardwareController:
                    self.scope_type = 'SIGLENT'
                    commands = [
                        'CHDR OFF',
-                       'C1:CPL AC',
-                       'C1:VDIV 1.0V',
-                       'C1:OFST 0',
-                       'TRSE EDGE,SR,EXT',
-                       'EX:TRSL POS',
-                       'TRMD AUTO',
-                       'C1:TRCP AC',
+                       f'C1:CPL {settings["channel_coupling"]}',
+                       f'C1:VDIV {settings["vertical_scale"]}V',
+                       f'TDIV {settings["horizontal_scale"]}',
+                       f'TRSE EDGE,SR,{settings["trigger_source"]}',
+                       f'EX:TRSL {settings["trigger_slope"]}',
+                       f'TRMD {settings["trigger_mode"]}',
+                       f'C1:TRCP {settings["trigger_coupling"]}',
                        'ACQW SAMPLING',
                        'MSIZ 14M',
                        'SARA?',
@@ -274,8 +273,8 @@ class HardwareController:
                'voltage': voltage_array.tolist()
             }
            
-           with open('waveform.json', 'w') as f:
-               json.dump(waveform_data, f)
+        #    with open('waveform.json', 'w') as f:
+        #        json.dump(waveform_data, f)
 
             
            return time_array, voltage_array
