@@ -10,7 +10,7 @@ import numpy as np
 from typing import Dict, Tuple
 import pyvisa
 from tqdm import tqdm
-
+import json
 class HardwareController:
    MM_PER_STEP: Dict[str, float] = {
        'x': 0.01,
@@ -269,6 +269,15 @@ class HardwareController:
                # Convert to voltage using Siglent scaling
                voltage_array = data * (vdiv/25) - offset
            
+           waveform_data = {
+               'time': time_array.tolist(),
+               'voltage': voltage_array.tolist()
+            }
+           
+           with open('waveform.json', 'w') as f:
+               json.dump(waveform_data, f)
+
+            
            return time_array, voltage_array
            
        except Exception as e:
