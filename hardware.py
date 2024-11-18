@@ -84,13 +84,13 @@ class HardwareController:
                    self.scope_type = 'TEKTRONIX'
                    commands = [
                        f'CH1:COUPLING {settings["channel_coupling"]}',
-                       f'CH1:SCALE {settings["vertical_scale"]}',
+                       f'CH1:SCALE {settings["vertical_scale"]}', 
                        f'CH1:POSITION {settings["channel_position"]}',
                        f'HOR:SCALE {settings["horizontal_scale"]}',
-                       f'TRIG:SOURCE {settings["trigger_source"]}',
-                       f'TRIG:SLOPE {settings["trigger_slope"]}',
-                       f'TRIG:MODE {settings["trigger_mode"]}',
-                       f'TRIG:COUPLING {settings["trigger_coupling"]}',
+                       f'TRIGger:MAIn:EDGE:SOUrce {settings["trigger_source"]}',
+                       f'TRIGger:MAIn:EDGE:SLOpe {settings["trigger_slope"]}',
+                       f'TRIGger:MAIn:MODe {settings["trigger_mode"]}',
+                       f'TRIGger:MAIn:EDGE:COUPling {settings["trigger_coupling"]}',
                        'DATA:SOURCE CH1',
                        'DATA:WIDTH 1',
                        'DATA:ENCDG RIBINARY'
