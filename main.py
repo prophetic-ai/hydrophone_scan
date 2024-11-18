@@ -9,9 +9,10 @@ from scanner import ScanController
 from processing import DataProcessor
 from config import load_config
 from datetime import datetime
-import sys
 import os
 import yaml
+import numpy as np
+import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(levelname)s - %(message)s')
@@ -125,6 +126,7 @@ class HydrophoneScanner:
         print("Commands:")
         print("  x+/x-/y+/y-/z+/z- <distance>  - Move axis by distance in mm")
         print("  m                              - Measure current position")
+        print("  w                              - View current waveform")
         print("  done                           - Finish positioning")
         
         while True:
@@ -139,6 +141,39 @@ class HydrophoneScanner:
                 if cmd[0] == 'm':
                     pos_peak, neg_peak = self.hardware.get_measurement()
                     print(f"Measurement: +{pos_peak:.3f}V, {neg_peak:.3f}V")
+                    continue
+                    
+                if cmd[0] == 'w':
+                    # Switch to TkAgg only when plotting
+                    import matplotlib
+                    current_backend = matplotlib.get_backend()
+                    matplotlib.use('TkAgg')
+                    import matplotlib.pyplot as plt
+                    
+                    time_array, voltage_array = self.hardware.get_full_waveform()
+                    if time_array is not None and voltage_array is not None:
+                        plt.figure(figsize=(10, 6))
+                        plt.plot(time_array * 1e6, voltage_array, 'b-', linewidth=1)
+                        plt.title('Current Waveform')
+                        plt.xlabel('Time (μs)')
+                        plt.ylabel('Voltage (V)')
+                        plt.grid(True)
+                        
+                        max_idx = np.argmax(voltage_array)
+                        min_idx = np.argmin(voltage_array)
+                        plt.plot(time_array[max_idx] * 1e6, voltage_array[max_idx], 'r^', 
+                                label=f'+{voltage_array[max_idx]:.3f}V')
+                        plt.plot(time_array[min_idx] * 1e6, voltage_array[min_idx], 'rv', 
+                                label=f'{voltage_array[min_idx]:.3f}V')
+                        plt.legend()
+                        
+                        plt.show(block=False)
+                        print(f"Peak values: +{voltage_array[max_idx]:.3f}V, {voltage_array[min_idx]:.3f}V")
+                    else:
+                        print("Failed to acquire waveform")
+                    
+                    # Switch back to original backend
+                    matplotlib.use(current_backend)
                     continue
                     
                 if len(cmd) == 2 and cmd[0][0] in 'xyz' and cmd[0][1] in '+-':
@@ -168,12 +203,20 @@ class HydrophoneScanner:
 def main():
     scanner = None
     try:
+        # Import and configure matplotlib
+        import matplotlib
+        matplotlib.use('TkAgg')
+        import matplotlib.pyplot as plt
+        
         scanner = HydrophoneScanner()
         
         print("\n=== Hydrophone Scanner ===")
         print("Starting hardware initialization...")
         
         while True:  # Main program loop
+            # Close any existing plots before showing menu
+            plt.close('all')
+            
             # Unified positioning and config step
             print("\nBefore scanning:")
             print("1. Enter positioning mode")
@@ -205,7 +248,7 @@ def main():
                 latest_scan_path = scanner.get_latest_scan_path()
                 if latest_scan_path:
                     print("\nScan Results:")
-                    print(f"View pressure maps at: {os.path.join(latest_scan_path, 'pressure_maps.png')}")
+                    print(f"Pressure maps saved to: {os.path.join(latest_scan_path, 'pressure_maps.png')}")
                     
                     # Single prompt for next action
                     print("\nWhat would you like to do next?")
@@ -232,6 +275,7 @@ def main():
     finally:
         if scanner:
             scanner.close()
+        plt.close('all')  # Make sure all plots are closed on exit
         print("\nScanner shutdown complete")
 
 

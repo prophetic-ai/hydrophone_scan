@@ -4,7 +4,6 @@ Data processing and visualization for Hydrophone Scanner
 
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')  # Use Agg backend to avoid display issues
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple
 import os
@@ -80,6 +79,7 @@ class DataProcessor:
         return None
 
     def _save_plots(self, pos_map: np.ndarray, neg_map: np.ndarray, save_path: str) -> None:
+        matplotlib.use('Agg')  # Use Agg backend to avoid display issues
         """Generate and save pressure map plots"""
         if pos_map.ndim == 1:  # 1D plot
             # Create figure for 1D plots
@@ -138,7 +138,82 @@ class DataProcessor:
         
         plt.tight_layout()
         plt.savefig(os.path.join(save_path, 'pressure_maps.png'), dpi=300, bbox_inches='tight')
-        plt.close()
+
+        matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plots
+        plt.show(block=False)
+        matplotlib.use('Agg')  # Revert to Agg backend after showing
+        # plt.close()
+
+
+    def _save_plots(self, pos_map: np.ndarray, neg_map: np.ndarray, save_path: str) -> None:
+        """Generate, save, and display pressure map plots"""
+        # Import and configure matplotlib if not already done
+        import matplotlib
+        matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plots
+        import matplotlib.pyplot as plt
+        
+        if pos_map.ndim == 1:  # 1D plot
+            # Create figure for 1D plots
+            plt.figure(figsize=(10, 8))
+            
+            # Positive pressure subplot
+            plt.subplot(2, 1, 1)
+            x = np.arange(len(pos_map)) * self.dimensions['resolution']
+            plt.plot(x, pos_map, 'b-')
+            plt.title('Peak Positive Pressure')
+            plt.xlabel('Position (mm)')
+            plt.ylabel('Pressure (MPa)')
+            
+            # Add FWHM if calculable
+            fwhm = self._calculate_fwhm(pos_map)
+            if fwhm:
+                plt.text(0.02, 0.95, f'FWHM: {fwhm:.2f} mm', 
+                        transform=plt.gca().transAxes)
+        
+            # Negative pressure subplot
+            plt.subplot(2, 1, 2)
+            plt.plot(x, np.abs(neg_map), 'r-')
+            plt.title('Peak Negative Pressure')
+            plt.xlabel('Position (mm)')
+            plt.ylabel('Pressure (MPa)')
+        
+        else:  # 2D plot
+            # Create figure for 2D plots
+            fig = plt.figure(figsize=(15, 6))
+            
+            # Calculate extent for proper scaling
+            extent = [0, pos_map.shape[1] * self.dimensions['resolution'],
+                    0, pos_map.shape[0] * self.dimensions['resolution']]
+            
+            # Positive pressure plot
+            plt.subplot(1, 2, 1)
+            pos_im = plt.imshow(pos_map, extent=extent, origin='lower', cmap='jet')
+            plt.colorbar(pos_im, label='Pressure (MPa)')
+            plt.title('Peak Positive Pressure')
+            plt.xlabel('Position (mm)')
+            plt.ylabel('Position (mm)')
+            
+            # Add FWHM if calculable
+            fwhm = self._calculate_fwhm(pos_map)
+            if fwhm:
+                plt.text(0.02, 0.95, f'FWHM: {fwhm:.2f} mm', 
+                        transform=plt.gca().transAxes, color='white')
+            
+            # Negative pressure plot
+            plt.subplot(1, 2, 2)
+            neg_im = plt.imshow(np.abs(neg_map), extent=extent, origin='lower', cmap='jet')
+            plt.colorbar(neg_im, label='Pressure (MPa)')
+            plt.title('Peak Negative Pressure')
+            plt.xlabel('Position (mm)')
+            plt.ylabel('Position (mm)')
+    
+        plt.tight_layout()
+    
+        # Save the plot
+        plt.savefig(os.path.join(save_path, 'pressure_maps.png'), dpi=300, bbox_inches='tight')
+        
+        # Show plot - it will be interactive and non-blocking
+        plt.show(block=False)
 
     def process_and_save(self, data: List[Dict], scan_id: str) -> None:
         """Process and save scan data with visualizations"""
