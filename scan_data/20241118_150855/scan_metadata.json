@@ -1,0 +1,99 @@
+{
+  "config": {
+    "hardware": {
+      "arduino_port": "/dev/tty.usbmodem101",
+      "scope_address": "USB0::0x0699::0x03A0::C014274::INSTR",
+      "steps_per_mm": {
+        "x": 100,
+        "y": 100,
+        "z": 100
+      },
+      "scope_settings": {
+        "trigger_level": 1.0,
+        "vertical_scale": 1.0,
+        "horizontal_scale": 2.5e-06,
+        "trigger_source": "EXT",
+        "trigger_slope": "RISE",
+        "trigger_mode": "AUTO",
+        "trigger_coupling": "AC",
+        "channel_coupling": "AC",
+        "channel_position": 0,
+        "acquisition_mode": "AVERAGE",
+        "average_count": 16
+      }
+    },
+    "scan": {
+      "type": "1d_y",
+      "dimensions": {
+        "x": 0,
+        "y": 2,
+        "z": 0,
+        "resolution": 0.5
+      },
+      "calibration_value": 0.3112,
+      "base_path": "./scan_data",
+      "save_options": {
+        "save_waveforms": true,
+        "waveform_decimation": 1
+      }
+    }
+  },
+  "scan_data": [
+    {
+      "position": {
+        "x": 0,
+        "y": -1.0,
+        "z": 0
+      },
+      "peaks": [
+        0.0088,
+        -0.0032
+      ]
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": -0.5,
+        "z": 0
+      },
+      "peaks": [
+        0.012,
+        -0.0056
+      ]
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 0.0,
+        "z": 0
+      },
+      "peaks": [
+        0.010400000000000001,
+        -0.008
+      ]
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 0.5,
+        "z": 0
+      },
+      "peaks": [
+        0.009600000000000001,
+        -0.0064
+      ]
+    }
+  ],
+  "timestamp": "2024-11-18T15:09:02.624297",
+  "peak_positive": 0.03856041131105399,
+  "peak_negative": -0.02570694087403599,
+  "center_position": {
+    "x": 0.0,
+    "y": 1.0,
+    "z": 0.0
+  },
+  "waveform_config": {
+    "saved": true,
+    "decimation": 1
+  }
+}

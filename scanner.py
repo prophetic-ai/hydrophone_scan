@@ -124,55 +124,6 @@ class ScanController:
                 
                 pbar.update(1)
 
-    # def _run_2d_scan(self, axes: str, dimensions: Dict) -> None:
-    #     """
-    #     Execute 2D scan in specified plane
-    #     """
-    #     primary_axis = axes[0]
-    #     secondary_axis = axes[1]
-        
-    #     # Calculate steps
-    #     primary_steps = int(dimensions[primary_axis] / dimensions['resolution'])
-    #     secondary_steps = int(dimensions[secondary_axis] / dimensions['resolution'])
-    #     total_points = primary_steps * secondary_steps
-        
-    #     # Move to start position
-    #     print(f"\nMoving to scan start position...")
-    #     self._move_relative(primary_axis, -dimensions[primary_axis] / 2)
-    #     self._move_relative(secondary_axis, -dimensions[secondary_axis] / 2)
-    #     time.sleep(0.2)
-        
-    #     # Execute serpentine scan pattern with progress bar
-    #     print(f"\nStarting {axes}-plane scan ({total_points} points, {secondary_steps} rows)...")
-        
-    #     with tqdm(total=total_points, 
-    #             desc=f"Scanning {axes}-plane",
-    #             ncols=100) as pbar:
-            
-    #         for j in range(secondary_steps):
-    #             # Update description with current row
-    #             pbar.set_description(f"Scanning {axes}-plane [Row {j+1}/{secondary_steps}]")
-                
-    #             # Determine primary axis direction for this row
-    #             direction = 1 if j % 2 == 0 else -1
-                
-    #             # Scan along primary axis
-    #             for i in range(primary_steps):
-    #                 # Collect data - now includes waveform
-    #                 point_data = self._collect_datapoint()
-    #                 self.data.append(point_data)  # Add complete point data
-                    
-    #                 # Move to next position if not at end of line
-    #                 if i < primary_steps - 1:
-    #                     self._move_relative(primary_axis, direction * dimensions['resolution'])
-    #                     time.sleep(0.1)
-
-    #                 pbar.update(1)
-                
-    #             # Move along secondary axis if not at end of scan
-    #             if j < secondary_steps - 1:
-    #                 self._move_relative(secondary_axis, dimensions['resolution'])
-    #                 time.sleep(0.1)    
 
     def _run_2d_scan(self, axes: str, dimensions: Dict) -> None:
         """

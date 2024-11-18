@@ -1,4 +1,5 @@
 hardware:
+  auto_scaling_enabled: true
   arduino_port: '/dev/tty.usbmodem101'  # or 'COMX' for Windows
   scope_address: 'USB0::0x0699::0x03A0::C014274::INSTR'
   steps_per_mm:

@@ -11,9 +11,10 @@ from typing import Dict, Tuple
 import pyvisa
 from tqdm import tqdm
 import json
+
+
 class HardwareController:
-   
-   
+
    def __init__(self, arduino_port: str, scope_address: str = None, config: Dict = None):
        self.arduino_port = arduino_port
        self.scope_address = scope_address
@@ -22,6 +23,9 @@ class HardwareController:
        self.scope = None
        self.scope_type = None
        self.current_position = {'x': 0, 'y': 0, 'z': 0}
+       self.scale_history = None
+       
+       self.auto_scaling_enabled = self.config['hardware'].get('auto_scaling_enabled', True)  # Default to True if not specified
 
 
        self.MM_PER_STEP = {
@@ -29,16 +33,16 @@ class HardwareController:
            'y': 1 / self.config['hardware']['steps_per_mm']['y'],
            'z': 1 / self.config['hardware']['steps_per_mm']['z']
         }
-       
+
        # Constants for vertical scaling
-       self.UPPER_LIMIT = 90  
-       self.LOWER_LIMIT = 20  
-       self.ROUND_BIN = 20e-3  # 20mV
-       
+    #    self.UPPER_LIMIT = 90
+    #    self.LOWER_LIMIT = 20
+    #    self.ROUND_BIN = 20e-3  # 20mV
+
        # Track current scale to avoid unnecessary logging
        self.current_scale = 0.1  # Start at 100mV/div
        self.last_scale_change = 0  # Time of last scale change
-       
+
        self._setup_connections()
 
    def _setup_connections(self) -> None:
@@ -51,12 +55,12 @@ class HardwareController:
                timeout=1
            )
            time.sleep(2)
-           
+
            response = self.arduino.readline().decode().strip()
            if not "Arduino is ready" in response:
                raise ConnectionError("Arduino not responding correctly")
            print("Arduino connected successfully")
-               
+
        except serial.SerialException as e:
            raise ConnectionError(f"Failed to connect to Arduino: {e}")
 
@@ -66,7 +70,7 @@ class HardwareController:
                rm = pyvisa.ResourceManager()
                self.scope = rm.open_resource(self.scope_address)
                self.scope.timeout = 30000
-               
+
                # Reset and clear
                self.scope.write('*RST')
                time.sleep(2)
@@ -75,7 +79,7 @@ class HardwareController:
 
                # Get scope settings from config
                settings = self.config['hardware']['scope_settings']
-               
+
                # Verify basic communication
                idn = self.scope.query('*IDN?')
                print(f"Connected to scope: {idn}")
@@ -85,7 +89,7 @@ class HardwareController:
                    self.scope_type = 'TEKTRONIX'
                    commands = [
                        f'CH1:COUPLING {settings["channel_coupling"]}',
-                       f'CH1:SCALE {settings["vertical_scale"]}', 
+                       f'CH1:SCALE {settings["vertical_scale"]}',
                        f'CH1:POSITION {settings["channel_position"]}',
                        f'HOR:SCALE {settings["horizontal_scale"]}',
                        f'TRIGger:MAIn:EDGE:SOUrce {settings["trigger_source"]}',
@@ -94,7 +98,8 @@ class HardwareController:
                        f'TRIGger:MAIn:EDGE:COUPling {settings["trigger_coupling"]}',
                        f'TRIGger:MAIn:LEVel {settings.get("trigger_level", 1.0)}',
                        f'ACQuire:MODe {settings.get("acquisition_mode", "SAMPLE")}',
-                       f'ACQuire:NUMAVg {settings.get("average_count", 16)}' if settings.get("acquisition_mode") == "AVERAGE" else None,
+                       f'ACQuire:NUMAVg {settings.get("average_count", 16)}' if settings.get(
+                           "acquisition_mode") == "AVERAGE" else None,
                        'DATA:SOURCE CH1',
                        'DATA:WIDTH 1',
                        'DATA:ENCDG RIBINARY'
@@ -102,7 +107,7 @@ class HardwareController:
 
                    # Filter out None values
                    commands = [cmd for cmd in commands if cmd is not None]
-                   
+
                elif 'SIGLENT' in idn.upper():
                    self.scope_type = 'SIGLENT'
                    commands = [
@@ -116,7 +121,8 @@ class HardwareController:
                        f'TRMD {settings["trigger_mode"]}',
                        f'C1:TRCP {settings["trigger_coupling"]}',
                        f'ACQW {settings.get("acquisition_mode", "SAMPLING")}',
-                       f'AVGA {settings.get("average_count", 16)}' if settings.get("acquisition_mode") == "AVERAGE" else None,
+                       f'AVGA {settings.get("average_count", 16)}' if settings.get(
+                           "acquisition_mode") == "AVERAGE" else None,
                        'MSIZ 14M',
                        'SARA?',
                        'WFSU SP,0,NP,0,FP,0'
@@ -126,7 +132,7 @@ class HardwareController:
                    commands = [cmd for cmd in commands if cmd is not None]
                else:
                    raise ValueError(f"Unsupported oscilloscope: {idn}")
-               
+
                print(f"Configuring {self.scope_type} scope settings...")
                for cmd in commands:
                    if '?' in cmd:
@@ -135,17 +141,18 @@ class HardwareController:
                    else:
                        self.scope.write(cmd)
                        time.sleep(0.1)
-               
+
                print("Scope configuration complete")
-                   
+
            except Exception as e:
-               raise ConnectionError(f"Failed to connect to oscilloscope: {str(e)}")
+               raise ConnectionError(
+                   f"Failed to connect to oscilloscope: {str(e)}")
 
    def move_axis(self, axis: str, distance: float) -> bool:
        """Move specified axis by given distance"""
        if axis not in self.MM_PER_STEP:
             raise ValueError(f"Invalid axis: {axis}")
-                
+
        try:
            steps = round(distance / self.MM_PER_STEP[axis])
            direction = '+' if distance > 0 else '-'
@@ -155,97 +162,20 @@ class HardwareController:
            # Add position tracking
            self.current_position[axis] += distance
            return True
-                
+
        except serial.SerialException as e:
            tqdm.write(f"Movement error: {e}")
            return False
-
 
    def get_current_position(self):
        """Return the current position"""
        return self.current_position
 
-   def get_measurement(self) -> Tuple[float, float]:
-       """Get single measurement from scope with voltage-based scaling"""
-       if not self.scope:
-           raise ConnectionError("Oscilloscope not connected")
-           
-       try:
-           if self.scope_type == 'TEKTRONIX':
-               # Set initial scale
-               self.scope.write(f'CH1:SCALE {self.current_scale}')
-               time.sleep(0.1)
-               
-               # Get initial reading
-               self.scope.write('*CLS')
-               self.scope.write('CURVE?')
-               raw_wave = self.scope.read_raw()
-               header_length = 2 + int(raw_wave[1:2])
-               data = np.frombuffer(raw_wave[header_length:], dtype=np.int8)
-               
-               # Convert to voltage
-               y_offset = float(self.scope.query("WFMPre:YOFf?"))
-               vert_scale = float(self.scope.query("WFMPre:YMUlt?"))
-               wave_volts = (data - y_offset) * vert_scale
 
-           else:  # SIGLENT
-               # Set initial scale
-               self.scope.write(f'C1:VDIV {self.current_scale}V')
-               time.sleep(0.1)
-               
-               # Get initial reading
-               self.scope.write('C1:WF? DAT2')
-               raw_wave = self.scope.read_raw()
-               data = np.frombuffer(raw_wave[15:-2], dtype=np.int8)
-               
-               # Convert to voltage
-               vdiv = float(self.scope.query('C1:VDIV?').split()[-1].strip('V'))
-               offset = float(self.scope.query('C1:OFST?').split()[-1].strip('V'))
-               wave_volts = data * (vdiv/25) - offset
+  
+        
+        
 
-           max_v = np.max(wave_volts)
-           min_v = np.min(wave_volts)
-           
-           # Only rescale if really necessary
-           peak_to_peak = max_v - min_v
-           new_scale = None
-           
-           # Check if we need to change scale
-           if peak_to_peak > 0.8 * self.current_scale * 8:  # Using >80% of display
-               new_scale = min(1.0, self.current_scale * 2)  # Don't go above 1V/div
-           elif peak_to_peak < 0.1 * self.current_scale * 8 and self.current_scale > 0.02:  # Using <10% of display
-               new_scale = max(0.02, self.current_scale * 0.5)  # Don't go below 20mV/div
-               
-           # Apply new scale if needed
-           if new_scale and new_scale != self.current_scale:
-               # Only log scale changes if they're not too frequent
-               current_time = time.time()
-               if current_time - self.last_scale_change > 1.0:  # Minimum 1 second between scale change messages
-                   if new_scale > self.current_scale:
-                       tqdm.write(f"Signal too large, scale -> {new_scale:.3f}V/div")
-                   else:
-                       tqdm.write(f"Signal too small, scale -> {new_scale:.3f}V/div")
-                   self.last_scale_change = current_time
-               
-               self.current_scale = new_scale
-               if self.scope_type == 'TEKTRONIX':
-                   self.scope.write(f"CH1:Scale {self.current_scale}")
-               else:  # SIGLENT
-                   self.scope.write(f"C1:VDIV {self.current_scale}V")
-               time.sleep(0.1)
-               
-               # Get new reading (recursive call with new scale)
-               return self.get_measurement()
-           
-           # Only log measurements in debug mode
-           if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
-               tqdm.write(f"Measurement: {max_v:.3f}V to {min_v:.3f}V (scale: {self.current_scale:.3f}V/div)")
-               
-           return max_v, min_v
-               
-       except Exception as e:
-           tqdm.write(f"Measurement error: {e}")
-           return 0.0, 0.0
 
    def get_full_waveform(self) -> Tuple[np.ndarray, np.ndarray]:
        """Get complete waveform with time values"""
@@ -315,3 +245,168 @@ class HardwareController:
        if self.scope:
            self.scope.close()
            print("Oscilloscope disconnected")
+
+
+
+
+   ####### NEW SCALING ALGORITHM: #######
+
+   def get_measurement(self) -> Tuple[float, float]:
+       """Get single measurement from scope with voltage-based scaling"""
+       if not self.scope:
+           raise ConnectionError("Oscilloscope not connected")
+            
+       # Configuration constants
+       MAX_SCALING_ATTEMPTS = 3
+       SETTLING_TIMES = {
+           'TEKTRONIX': 0.3,  # 300ms for Tektronix
+           'SIGLENT': 0.2     # 200ms for Siglent
+       }
+       SCALE_LIMITS = {
+           'min': 0.02,  # 2mV/div minimum 
+           'max': 10.0    # 10V/div maximum
+       }
+       NOISE_FLOOR = 0.001  # 1mV noise floor estimation
+       
+       def get_scope_data():
+           """Helper function to get data from scope"""
+           try:
+               if self.scope_type == 'TEKTRONIX':
+                   self.scope.write('*CLS')
+                   self.scope.write('CURVE?')
+                   raw_wave = self.scope.read_raw()
+                   header_length = 2 + int(raw_wave[1:2])
+                   data = np.frombuffer(raw_wave[header_length:], dtype=np.int8)
+                   
+                   y_offset = float(self.scope.query("WFMPre:YOFf?"))
+                   vert_scale = float(self.scope.query("WFMPre:YMUlt?"))
+                   wave_volts = (data - y_offset) * vert_scale
+
+               else:  # SIGLENT
+                   self.scope.write('C1:WF? DAT2')
+                   raw_wave = self.scope.read_raw()
+                   data = np.frombuffer(raw_wave[15:-2], dtype=np.int8)
+                   
+                   vdiv = float(self.scope.query('C1:VDIV?').split()[-1].strip('V'))
+                   offset = float(self.scope.query('C1:OFST?').split()[-1].strip('V'))
+                   wave_volts = data * (vdiv/25) - offset
+                   
+               return wave_volts
+               
+           except Exception as e:
+               logging.error(f"Scope data acquisition error: {e}")
+               return None
+
+       def set_scale(new_scale: float) -> bool:
+           """Helper function to set scope scale"""
+           try:
+               if self.scope_type == 'TEKTRONIX':
+                   self.scope.write(f"CH1:Scale {new_scale}")
+               else:  # SIGLENT
+                   self.scope.write(f"C1:VDIV {new_scale}V")
+               
+               time.sleep(SETTLING_TIMES[self.scope_type])
+               return True
+           except Exception as e:
+               logging.error(f"Scale setting error: {e}")
+               return False
+
+       def calculate_new_scale(peak_to_peak: float, usage_percent: float) -> float:
+           """Helper function to calculate new scale"""
+           # Calculate target scale based on usage
+           target_usage = 70  # Aim for 70% usage
+           current_time = time.time()
+           scale_age = current_time - self.last_scale_change
+           
+           # Add acceleration factor based on how far off we are
+           acceleration = min(2.0, abs(target_usage - usage_percent) / 50)
+           
+           if usage_percent > 90 and scale_age > 2.0:
+               # Scale up with acceleration
+               scale_factor = min(1.5 * acceleration, 2.0)
+               new_scale = min(SCALE_LIMITS['max'], 
+                             self.current_scale * scale_factor)
+               
+           elif usage_percent < 5 and scale_age > 3.0:
+               # Check if we're near noise floor
+               if peak_to_peak < NOISE_FLOOR * 3:  # 3x noise floor minimum
+                   return self.current_scale
+                   
+               # Scale down with acceleration
+               scale_factor = max(0.75 / acceleration, 0.5)
+               new_scale = max(SCALE_LIMITS['min'],
+                             self.current_scale * scale_factor)
+           else:
+               return self.current_scale
+               
+           # Round to nearest standard scope scale
+           standard_scales = [
+               0.02,   # 20mV
+               0.05,   # 50mV
+               0.1,    # 100mV
+               0.2,    # 200mV
+               0.5,    # 500mV
+               1.0,    # 1V
+               2.0,    # 2V
+               5.0,    # 5V
+               10.0    # 10V
+           ]
+           
+           return min(standard_scales, key=lambda x: abs(x - new_scale))
+
+       # Main measurement loop
+       for attempt in range(MAX_SCALING_ATTEMPTS):
+           try:
+               # Set initial scale
+               if not set_scale(self.current_scale):
+                   raise Exception("Failed to set initial scale")
+                   
+               # Get waveform data
+               wave_volts = get_scope_data()
+               if wave_volts is None:
+                   raise Exception("Failed to get waveform data")
+                   
+               # Calculate measurements
+               max_v = np.max(wave_volts)
+               min_v = np.min(wave_volts)
+               peak_to_peak = max_v - min_v
+               display_range = self.current_scale * 8  # 8 divisions total
+               usage_percent = (peak_to_peak / display_range) * 100
+               
+               # Update scale history with exponential moving average
+               if self.scale_history is None:
+                   self.scale_history = usage_percent
+               else:
+                   self.scale_history = self.scale_history * 0.7 + usage_percent * 0.3
+               
+               # Check if auto-scaling is enabled
+               if self.auto_scaling_enabled:
+                   # Calculate new scale if needed
+                   new_scale = calculate_new_scale(peak_to_peak, usage_percent)
+                   
+                   # Apply new scale if significant change
+                   if abs(new_scale - self.current_scale) / self.current_scale > 0.01:
+                       if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                           tqdm.write(f"Signal scale adjustment ({attempt+1}/{MAX_SCALING_ATTEMPTS}): "
+                                      f"{self.current_scale:.3f}V/div -> {new_scale:.3f}V/div")
+                       
+                       self.current_scale = new_scale
+                       self.last_scale_change = time.time()
+                       continue  # Try another measurement with new scale
+               
+               # If we get here, scale is good
+               if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                   tqdm.write(f"Measurement: {max_v:.3f}V to {min_v:.3f}V "
+                              f"(scale: {self.current_scale:.3f}V/div)")
+               
+               return max_v, min_v
+               
+           except Exception as e:
+               logging.error(f"Measurement attempt {attempt+1} failed: {e}")
+               if attempt == MAX_SCALING_ATTEMPTS - 1:
+                   # On final attempt, return zeros and reset scale history
+                   self.scale_history = 50
+                   return 0.0, 0.0
+               
+               # Otherwise try again with current scale
+               time.sleep(0.5)  # Add delay between retries
