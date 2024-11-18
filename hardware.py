@@ -91,10 +91,16 @@ class HardwareController:
                        f'TRIGger:MAIn:EDGE:SLOpe {settings["trigger_slope"]}',
                        f'TRIGger:MAIn:MODe {settings["trigger_mode"]}',
                        f'TRIGger:MAIn:EDGE:COUPling {settings["trigger_coupling"]}',
+                       f'ACQuire:MODe {settings.get("acquisition_mode", "SAMPLE")}',
+                       f'ACQuire:NUMAVg {settings.get("average_count", 16)}' if settings.get("acquisition_mode") == "AVERAGE" else None,
                        'DATA:SOURCE CH1',
                        'DATA:WIDTH 1',
                        'DATA:ENCDG RIBINARY'
                    ]
+
+                   # Filter out None values
+                   commands = [cmd for cmd in commands if cmd is not None]
+                   
                elif 'SIGLENT' in idn.upper():
                    self.scope_type = 'SIGLENT'
                    commands = [
@@ -106,11 +112,15 @@ class HardwareController:
                        f'EX:TRSL {settings["trigger_slope"]}',
                        f'TRMD {settings["trigger_mode"]}',
                        f'C1:TRCP {settings["trigger_coupling"]}',
-                       'ACQW SAMPLING',
+                       f'ACQW {settings.get("acquisition_mode", "SAMPLING")}',
+                       f'AVGA {settings.get("average_count", 16)}' if settings.get("acquisition_mode") == "AVERAGE" else None,
                        'MSIZ 14M',
                        'SARA?',
                        'WFSU SP,0,NP,0,FP,0'
                    ]
+
+                   # Filter out None values
+                   commands = [cmd for cmd in commands if cmd is not None]
                else:
                    raise ValueError(f"Unsupported oscilloscope: {idn}")
                

@@ -14,6 +14,8 @@ hardware:
     trigger_coupling: 'AC'    # AC or DC
     channel_coupling: 'AC'    # AC or DC
     channel_position: 0       # vertical position
+    acquisition_mode: 'AVERAGE'  # SAMPLE, AVERAGE, PEAKDETECT
+    average_count: 16        # 4, 16, 32, 64, 128 when mode is AVERAGE
 
 scan:
   type: '2d_yz'  # Options: 1d_x, 1d_y, 1d_z, 2d_xy, 2d_xz, 2d_yz
