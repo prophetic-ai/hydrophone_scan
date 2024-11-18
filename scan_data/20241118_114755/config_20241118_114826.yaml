@@ -1,0 +1,30 @@
+hardware:
+  arduino_port: /dev/tty.usbmodem101
+  scope_address: USB0::0x0699::0x03A0::C014274::INSTR
+  scope_settings:
+    acquisition_mode: AVERAGE
+    average_count: 16
+    channel_coupling: AC
+    channel_position: 0
+    horizontal_scale: 2.5e-06
+    trigger_coupling: AC
+    trigger_mode: AUTO
+    trigger_slope: RISE
+    trigger_source: EXT
+    vertical_scale: 1.0
+  steps_per_mm:
+    x: 100
+    y: 100
+    z: 100
+scan:
+  base_path: ./scan_data
+  calibration_value: 0.3112
+  dimensions:
+    resolution: 0.5
+    x: 0
+    y: 0.0
+    z: 0.0
+  save_options:
+    save_waveforms: true
+    waveform_decimation: 1
+  type: 2d_yz

@@ -21,6 +21,7 @@ class HardwareController:
        self.arduino = None
        self.scope = None
        self.scope_type = None
+       self.current_position = {'x': 0, 'y': 0, 'z': 0}
 
 
        self.MM_PER_STEP = {
@@ -141,19 +142,26 @@ class HardwareController:
    def move_axis(self, axis: str, distance: float) -> bool:
        """Move specified axis by given distance"""
        if axis not in self.MM_PER_STEP:
-           raise ValueError(f"Invalid axis: {axis}")
-               
+            raise ValueError(f"Invalid axis: {axis}")
+                
        try:
            steps = round(distance / self.MM_PER_STEP[axis])
            direction = '+' if distance > 0 else '-'
            command = f"<{axis},{direction},{abs(steps)}>"
            self.arduino.write(command.encode())
            self.arduino.flush()
+           # Add position tracking
+           self.current_position[axis] += distance
            return True
-               
+                
        except serial.SerialException as e:
            tqdm.write(f"Movement error: {e}")
            return False
+
+
+   def get_current_position(self):
+       """Return the current position"""
+       return self.current_position
 
    def get_measurement(self) -> Tuple[float, float]:
        """Get single measurement from scope with voltage-based scaling"""

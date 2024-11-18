@@ -21,8 +21,8 @@ scan:
   type: '2d_yz'  # Options: 1d_x, 1d_y, 1d_z, 2d_xy, 2d_xz, 2d_yz
   dimensions:
     x: 0  # mm
-    y: 1  # mm
-    z: 1   # mm
+    y: 2  # mm
+    z: 2   # mm
     resolution: 0.5  # mm
   calibration_value: 0.3112  # V/MPa
   base_path: './scan_data'
