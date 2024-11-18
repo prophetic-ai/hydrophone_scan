@@ -6,6 +6,7 @@ hardware:
     y: 100
     z: 100
   scope_settings:
+    trigger_level: 1.0
     vertical_scale: 1.0       # V/div
     horizontal_scale: 2.5e-6  # s/div
     trigger_source: 'EXT'     # EXT or CH1
