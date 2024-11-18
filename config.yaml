@@ -26,4 +26,7 @@ scan:
     resolution: 0.5  # mm
   calibration_value: 0.3112  # V/MPa
   base_path: './scan_data'
+  save_options:
+    save_waveforms: true # Enable/disable saving of waveforms
+    waveform_decimation: 1  # Decimation factor for waveforms ( 1 = all waveforms saved)
 

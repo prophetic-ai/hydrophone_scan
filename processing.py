@@ -23,7 +23,13 @@ class DataProcessor:
     def _convert_to_pressure(self, voltage: float) -> float:
         """Convert voltage to pressure (MPa)"""
         return voltage / self.calibration_value
-        
+    
+    def _format_coordinate(self, value: float) -> str:
+
+        """Convert coordinate value to string format like '0p50' or '-1p25'"""
+        # Replace decimal point with 'p' and ensure two decimal places
+        return f"{value:.2f}".replace('.', 'p').replace('-', 'n')
+
     def _create_pressure_map(self, data: List[Dict]) -> Tuple[np.ndarray, np.ndarray]:
         """Create pressure maps from scan data"""
         if self.scan_type.startswith('1d'):
@@ -140,9 +146,14 @@ class DataProcessor:
         scan_path = os.path.join(self.base_path, scan_id)
         os.makedirs(scan_path, exist_ok=True)
 
-        # Create waveform directory
-        waveforms_path = os.path.join(scan_path, 'waveforms')
-        os.makedirs(waveforms_path, exist_ok=True)
+        # Get save options from config
+        save_options = self.config['scan'].get('save_options', {})
+        save_waveforms = save_options.get('save_waveforms', True)
+        waveform_decimation = save_options.get('waveform_decimation', 1)
+
+        if save_waveforms:
+            waveforms_path = os.path.join(scan_path, 'waveforms')
+            os.makedirs(waveforms_path, exist_ok=True)
         
         # Process data
         pos_map, neg_map = self._create_pressure_map(data)
@@ -151,7 +162,14 @@ class DataProcessor:
         peak_pos = np.max(pos_map)
         peak_neg = np.min(neg_map)
         
-        # Save waveforms
+        # Calculate scan center based on dimensions
+        center = {
+            'x': self.dimensions.get('x', 0) / 2,
+            'y': self.dimensions.get('y', 0) / 2,
+            'z': self.dimensions.get('z', 0) / 2
+        }
+        
+        # Save processed data
         processed_data = []
         for i, point in enumerate(data):
             point_data = {
@@ -160,25 +178,51 @@ class DataProcessor:
             }
             processed_data.append(point_data)
             
-            # Save waveform if it exists
-            if point.get('waveform') and point['waveform']['time'] is not None:
-                waveform_data = point['waveform']
-                waveform_data['position'] = point['position']
-                waveform_file = os.path.join(waveforms_path, f'point_{i}.json')
-                with open(waveform_file, 'w') as f:
-                    json.dump(waveform_data, f)
+            # Save waveform if enabled and meets decimation criteria
+            if save_waveforms and i % waveform_decimation == 0:
+                if point.get('waveform') and point['waveform']['time'] is not None:
+                    # Calculate relative position from center
+                    rel_pos = {
+                        'x': point['position']['x'] - center['x'],
+                        'y': point['position']['y'] - center['y'],
+                        'z': point['position']['z'] - center['z']
+                    }
+                    
+                    # Create filename with relative coordinates
+                    filename = f"X{self._format_coordinate(rel_pos['x'])}_" \
+                            f"Y{self._format_coordinate(rel_pos['y'])}_" \
+                            f"Z{self._format_coordinate(rel_pos['z'])}.json"
+                    
+                    waveform_data = {
+                        'waveform': point['waveform'],
+                        'position': {
+                            'absolute': point['position'],
+                            'relative': rel_pos
+                        },
+                        'peaks': point['peaks'],
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    waveform_file = os.path.join(waveforms_path, filename)
+                    with open(waveform_file, 'w') as f:
+                        json.dump(waveform_data, f, indent=2)
         
-        # Save raw data (without waveforms to keep JSON manageable)
-        raw_data = {
+        # Save scan metadata
+        metadata = {
             'config': self.config,
             'scan_data': processed_data,
             'timestamp': datetime.now().isoformat(),
             'peak_positive': float(peak_pos),
-            'peak_negative': float(peak_neg)
+            'peak_negative': float(peak_neg),
+            'center_position': center,
+            'waveform_config': {
+                'saved': save_waveforms,
+                'decimation': waveform_decimation,
+            }
         }
         
-        with open(os.path.join(scan_path, 'raw_data.json'), 'w') as f:
-            json.dump(raw_data, f, indent=2)
+        with open(os.path.join(scan_path, 'scan_metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
         
         # Generate and save plots
         self._save_plots(pos_map, neg_map, scan_path)
@@ -191,7 +235,10 @@ class DataProcessor:
         print(f"\nScan processed and saved to: {scan_path}")
         print(f"Peak Positive Pressure: {peak_pos:.2f} MPa")
         print(f"Peak Negative Pressure: {peak_neg:.2f} MPa")
-        print(f"Waveforms saved in: {waveforms_path}")
+        if save_waveforms:
+            print(f"Waveforms saved in: {waveforms_path}")
+            if waveform_decimation > 1:
+                print(f"Saving every {waveform_decimation}th waveform")
         
         if self.scan_type.startswith('2d'):
             fwhm = self._calculate_fwhm(pos_map)
