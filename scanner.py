@@ -104,7 +104,12 @@ class ScanController:
         print(f"\nMoving to scan start position...")
         start_offset = -distance / 2
         self._move_relative(axis, start_offset)
-        time.sleep(0.2)
+        
+        time.sleep(1)
+        
+        for _ in range(3):
+            self.hardware.get_measurement()
+            time.sleep(0.2)
         
         # Execute scan with progress bar
         print(f"\nStarting {axis}-axis scan ({steps} points)...")
@@ -141,7 +146,11 @@ class ScanController:
         print(f"\nMoving to scan start position...")
         self._move_relative(primary_axis, -dimensions[primary_axis] / 2)
         self._move_relative(secondary_axis, -dimensions[secondary_axis] / 2)
-        time.sleep(0.2)
+        time.sleep(1)
+            
+        for _ in range(3):
+            self.hardware.get_measurement()
+            time.sleep(0.2)
         
         # Execute serpentine scan pattern with a single progress bar
         print(f"\nStarting {axes}-plane scan ({total_points} points)")

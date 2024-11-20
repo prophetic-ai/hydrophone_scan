@@ -85,13 +85,21 @@ class DataProcessor:
             # Create figure for 1D plots
             plt.figure(figsize=(10, 8))
             
+            # Calculate x-axis values centered at 0
+            num_points = len(pos_map)
+            step_size = self.dimensions['resolution']
+            x = np.linspace(-step_size * (num_points-1)/2, 
+                        step_size * (num_points-1)/2, 
+                        num_points)
+            
             # Positive pressure subplot
             plt.subplot(2, 1, 1)
-            x = np.arange(len(pos_map)) * self.dimensions['resolution']
             plt.plot(x, pos_map, 'b-')
             plt.title('Peak Positive Pressure')
             plt.xlabel('Position (mm)')
             plt.ylabel('Pressure (MPa)')
+            plt.grid(True)
+            plt.axvline(x=0, color='k', linestyle='--', alpha=0.3)
             
             # Add FWHM if calculable
             fwhm = self._calculate_fwhm(pos_map)
@@ -105,6 +113,8 @@ class DataProcessor:
             plt.title('Peak Negative Pressure')
             plt.xlabel('Position (mm)')
             plt.ylabel('Pressure (MPa)')
+            plt.grid(True)
+            plt.axvline(x=0, color='k', linestyle='--', alpha=0.3)
             
         else:  # 2D plot
             # Create figure for 2D plots
@@ -156,26 +166,39 @@ class DataProcessor:
             # Create figure for 1D plots
             plt.figure(figsize=(10, 8))
             
+            # Calculate total scan distance and center it around 0
+            total_distance = len(pos_map) * self.dimensions['resolution']
+            x = np.linspace(-total_distance/2, total_distance/2, len(pos_map))
+            
             # Positive pressure subplot
             plt.subplot(2, 1, 1)
-            x = np.arange(len(pos_map)) * self.dimensions['resolution']
-            plt.plot(x, pos_map, 'b-')
+            plt.plot(x, pos_map, 'b-', linewidth=2)
             plt.title('Peak Positive Pressure')
             plt.xlabel('Position (mm)')
             plt.ylabel('Pressure (MPa)')
+            plt.grid(True)
+            plt.axvline(x=0, color='k', linestyle='--', alpha=0.3)
+            
+            # Ensure x-axis is centered
+            plt.xlim(-total_distance/2, total_distance/2)
             
             # Add FWHM if calculable
             fwhm = self._calculate_fwhm(pos_map)
             if fwhm:
                 plt.text(0.02, 0.95, f'FWHM: {fwhm:.2f} mm', 
                         transform=plt.gca().transAxes)
-        
+            
             # Negative pressure subplot
             plt.subplot(2, 1, 2)
-            plt.plot(x, np.abs(neg_map), 'r-')
+            plt.plot(x, np.abs(neg_map), 'r-', linewidth=2)
             plt.title('Peak Negative Pressure')
             plt.xlabel('Position (mm)')
             plt.ylabel('Pressure (MPa)')
+            plt.grid(True)
+            plt.axvline(x=0, color='k', linestyle='--', alpha=0.3)
+            
+            # Ensure x-axis is centered
+            plt.xlim(-total_distance/2, total_distance/2)
         
         else:  # 2D plot
             # Create figure for 2D plots
