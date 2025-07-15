@@ -127,7 +127,10 @@ class HydrophoneScanner:
         print("  x+/x-/y+/y-/z+/z- <distance>  - Move axis by distance in mm")
         print("  m                              - Measure current position")
         print("  w                              - View current waveform")
+        print("  r                              - Repeat previous movement command")
         print("  done                           - Finish positioning")
+        
+        last_movement_cmd = None  # Store the last movement command
         
         while True:
             try:
@@ -137,6 +140,14 @@ class HydrophoneScanner:
                     
                 if cmd[0] == 'done':
                     break
+                    
+                if cmd[0] == 'r':
+                    if last_movement_cmd is None:
+                        print("No previous movement command to repeat")
+                        continue
+                    else:
+                        print(f"Repeating: {' '.join(last_movement_cmd)}")
+                        cmd = last_movement_cmd
                     
                 if cmd[0] == 'm':
                     pos_peak, neg_peak = self.hardware.get_measurement()
@@ -184,6 +195,8 @@ class HydrophoneScanner:
                         
                     if self.hardware.move_axis(axis, distance):
                         print(f"Moved {axis} axis by {distance}mm")
+                        # Store this command for repeat functionality
+                        last_movement_cmd = cmd.copy()
                     else:
                         print("Movement failed")
                 else:

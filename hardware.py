@@ -49,21 +49,64 @@ class HardwareController:
        """Establish hardware connections"""
        try:
            print("\nConnecting to Arduino...")
+           print(f"Attempting to connect to port: {self.arduino_port}")
            self.arduino = serial.Serial(
                port=self.arduino_port,
                baudrate=115200,
                timeout=1
            )
+           print(f"Serial port opened successfully: {self.arduino.is_open}")
+           print("Waiting 2 seconds for Arduino to initialize...")
            time.sleep(2)
 
+           # Try reading multiple times in case Arduino sends multiple lines
+           print("Reading Arduino response...")
            response = self.arduino.readline().decode().strip()
-           if not "Arduino is ready" in response:
-               raise ConnectionError("Arduino not responding correctly")
-           print("Arduino connected successfully")
+           print(f"Arduino response: '{response}'")
+           
+           # If first response is empty, try reading a few more times
+           if not response:
+               print("First response empty, trying to read more...")
+               for i in range(3):
+                   time.sleep(0.5)
+                   additional_response = self.arduino.readline().decode().strip()
+                   print(f"Additional response {i+1}: '{additional_response}'")
+                   if additional_response:
+                       response = additional_response
+                       break
+           
+           # Check if we have any data in the buffer
+           bytes_waiting = self.arduino.in_waiting
+           print(f"Bytes waiting in buffer: {bytes_waiting}")
+           
+           # Be more flexible with the response - check for "Arduino is ready" with any line endings
+           if not response:
+               print("\n" + "="*60)
+               print("❌ NO ARDUINO FIRMWARE DETECTED")
+               print("="*60)
+               print("The Arduino is connected but not responding.")
+               print("This means the firmware is not uploaded to the Arduino.")
+               print("\nTo fix this:")
+               print("1. Open Arduino IDE")
+               print("2. Open the 'arduino.ino' file from this directory")
+               print("3. Install AccelStepper library (Tools → Manage Libraries)")
+               print("4. Select Board: Arduino Uno (Tools → Board)")
+               print("5. Select Port: /dev/cu.usbmodem1401 (Tools → Port)")
+               print("6. Upload the sketch (Ctrl+U)")
+               print("="*60)
+               raise ConnectionError("Arduino firmware not uploaded - see instructions above")
+           elif "Arduino is ready" in response:
+               print("✅ Arduino connected successfully")
+           else:
+               print(f"⚠️  Arduino responded but with unexpected message: '{response}'")
+               print("Continuing anyway - this might still work...")
 
        except serial.SerialException as e:
+           print(f"Serial connection error: {e}")
            raise ConnectionError(f"Failed to connect to Arduino: {e}")
 
+       # OSCILLOSCOPE LOGIC COMMENTED OUT FOR NOW
+       """
        if self.scope_address:
            try:
                print("\nConnecting to oscilloscope...")
@@ -147,6 +190,8 @@ class HardwareController:
            except Exception as e:
                raise ConnectionError(
                    f"Failed to connect to oscilloscope: {str(e)}")
+       """
+       print("⚠️  Oscilloscope connection skipped (commented out for testing)")
 
    def move_axis(self, axis: str, distance: float) -> bool:
        """Move specified axis by given distance"""
@@ -154,17 +199,73 @@ class HardwareController:
             raise ValueError(f"Invalid axis: {axis}")
 
        try:
+           # Enable motors before movement
+           self.enable_motors()
+           
            steps = round(distance / self.MM_PER_STEP[axis])
            direction = '+' if distance > 0 else '-'
            command = f"<{axis},{direction},{abs(steps)}>"
            self.arduino.write(command.encode())
            self.arduino.flush()
+           
+           # Wait for movement completion (Arduino will send response)
+           response = self.arduino.readline().decode().strip()
+           
            # Add position tracking
            self.current_position[axis] += distance
+           
+           # Disable motors after movement to reduce noise
+           self.disable_motors()
+           
            return True
 
        except serial.SerialException as e:
            tqdm.write(f"Movement error: {e}")
+           return False
+
+   def enable_motors(self) -> bool:
+       """Enable stepper motors"""
+       try:
+           command = "<e,+,0>"  # Enable command
+           self.arduino.write(command.encode())
+           self.arduino.flush()
+           time.sleep(0.1)  # Small delay for motor enable
+           return True
+       except serial.SerialException as e:
+           tqdm.write(f"Motor enable error: {e}")
+           return False
+
+   def disable_motors(self) -> bool:
+       """Disable stepper motors to reduce noise"""
+       try:
+           command = "<d,+,0>"  # Disable command
+           self.arduino.write(command.encode())
+           self.arduino.flush()
+           time.sleep(0.1)  # Small delay for motor disable
+           return True
+       except serial.SerialException as e:
+           tqdm.write(f"Motor disable error: {e}")
+           return False
+
+   def home_motors(self) -> bool:
+       """Home all motors to center position"""
+       try:
+           print("Homing motors...")
+           command = "<h,+,0>"  # Home command
+           self.arduino.write(command.encode())
+           self.arduino.flush()
+           
+           # Wait for homing to complete - this can take a while
+           # The Arduino will send a response when done
+           response = self.arduino.readline().decode().strip()
+           print(f"Homing complete: {response}")
+           
+           # Reset position tracking to center
+           self.current_position = {'x': 0, 'y': 0, 'z': 0}
+           
+           return True
+       except serial.SerialException as e:
+           tqdm.write(f"Homing error: {e}")
            return False
 
    def get_current_position(self):
@@ -180,7 +281,11 @@ class HardwareController:
    def get_full_waveform(self) -> Tuple[np.ndarray, np.ndarray]:
        """Get complete waveform with time values"""
        if not self.scope:
-           raise ConnectionError("Oscilloscope not connected")
+           # Return dummy waveform when oscilloscope is not connected
+           print("⚠️  Oscilloscope not connected - returning dummy waveform data")
+           time_array = np.linspace(0, 25e-6, 1000)  # 25 microseconds, 1000 points
+           voltage_array = np.sin(2 * np.pi * 1e6 * time_array)  # 1 MHz sine wave
+           return time_array, voltage_array
            
        try:
            if self.scope_type == 'TEKTRONIX':
@@ -254,7 +359,9 @@ class HardwareController:
    def get_measurement(self) -> Tuple[float, float]:
        """Get single measurement from scope with voltage-based scaling"""
        if not self.scope:
-           raise ConnectionError("Oscilloscope not connected")
+           # Return dummy values when oscilloscope is not connected
+           print("⚠️  Oscilloscope not connected - returning dummy measurement values")
+           return 1.0, -1.0  # Dummy positive and negative peak values
             
        # Configuration constants
        MAX_SCALING_ATTEMPTS = 3
