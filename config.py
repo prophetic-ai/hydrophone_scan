@@ -41,13 +41,17 @@ def validate_config(config: Dict) -> None:
             
     elif scan_type.startswith('2d'):
         # For 2D scans, verify exactly two dimensions are non-zero
-        axes = scan_type[-2:]  # xy, xz, or yz
+        axes = scan_type[-2:]  # xy, yx, xz, or yz
         active_dims = [k for k in ['x', 'y', 'z'] if dims[k] != 0]
         
         if len(active_dims) != 2:
             raise ValueError("2D scan should have exactly two non-zero dimensions")
             
-        if not all(axis in axes for axis in active_dims):
+        # For xy and yx, both x and y should be non-zero
+        if axes in ['xy', 'yx']:
+            if not ('x' in active_dims and 'y' in active_dims):
+                raise ValueError(f"2D scan in {axes} plane requires both x and y dimensions to be non-zero")
+        elif not all(axis in axes for axis in active_dims):
             raise ValueError(f"2D scan in {axes} plane has wrong dimensions set")
     
 def load_config(config_path: str = "config.yaml") -> Dict:

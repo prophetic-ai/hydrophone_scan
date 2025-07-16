@@ -41,7 +41,7 @@ class Scanner:
             self.oscilloscope = OscilloscopeReader(scope_address) if scope_address else None
             
             # Initialize post-processor
-            self.post_processor = ScanPostProcessor()
+            self.post_processor = ScanPostProcessor(self.config)
             
             print("✅ Hydrophone scanner initialized successfully")
             
@@ -140,6 +140,39 @@ class Scanner:
                     current_x_vals = x_vals[::-1]
                 
                 for x_offset in current_x_vals:
+                    points.append({'x': start_pos['x'] + x_offset, 'y': start_pos['y'] + y_offset, 'z': start_pos['z']})
+                    
+        elif axes == 'yx':
+            # Snake pattern for YX scan (Y first, then X - opposite of XY)
+            x_distance = distances['x']
+            y_distance = distances['y']
+            
+            # Generate X values
+            if x_distance == 0:
+                x_vals = [0]
+            elif x_distance > 0:
+                x_vals = np.arange(0, x_distance + increment/2, increment)
+            else:
+                x_vals = np.arange(0, x_distance - increment/2, -increment)
+            
+            # Generate Y values
+            if y_distance == 0:
+                y_vals = [0]
+            elif y_distance > 0:
+                y_vals = np.arange(0, y_distance + increment/2, increment)
+            else:
+                y_vals = np.arange(0, y_distance - increment/2, -increment)
+            
+            # Create snake pattern: alternate Y direction for each X row (opposite of XY)
+            for i, x_offset in enumerate(x_vals):
+                if i % 2 == 0:
+                    # Even rows: scan Y in normal direction
+                    current_y_vals = y_vals
+                else:
+                    # Odd rows: scan Y in reverse direction
+                    current_y_vals = y_vals[::-1]
+                
+                for y_offset in current_y_vals:
                     points.append({'x': start_pos['x'] + x_offset, 'y': start_pos['y'] + y_offset, 'z': start_pos['z']})
                     
         elif axes == 'xz':
@@ -276,10 +309,10 @@ class Scanner:
         
         # Get axis configuration
         print("\nAxis Configuration:")
-        print("Available axis combinations: x, y, z, xy, xz, yz, xyz")
+        print("Available axis combinations: x, y, z, xy, yx, xz, yz, xyz")
         axes = input("Enter axis combination (e.g., 'xy' for X-Y scan): ").strip().lower()
         
-        if axes not in ['x', 'y', 'z', 'xy', 'xz', 'yz', 'xyz']:
+        if axes not in ['x', 'y', 'z', 'xy', 'yx', 'xz', 'yz', 'xyz']:
             print("❌ Invalid axis combination")
             return
         
@@ -318,7 +351,7 @@ class Scanner:
         print(f"  Total points: {len(points)}")
         
         # Show scan pattern info
-        if axes in ['xy', 'xz', 'yz', 'xyz']:
+        if axes in ['xy', 'yx', 'xz', 'yz', 'xyz']:
             print(f"  Scan pattern: Snake/raster (alternating direction per row)")
         
         # Show scan bounds
@@ -357,7 +390,7 @@ class Scanner:
             'scan_distances': distances,
             'increment': increment,
             'total_points': len(points),
-            'scan_pattern': 'snake' if axes in ['xy', 'xz', 'yz', 'xyz'] else 'linear',
+            'scan_pattern': 'snake' if axes in ['xy', 'yx', 'xz', 'yz', 'xyz'] else 'linear',
             'arduino_config': {
                 'port': self.config['hardware']['arduino_port'],
                 'steps_per_mm': self.config['hardware']['steps_per_mm']
@@ -387,7 +420,6 @@ class Scanner:
         
         try:
             for i, point in enumerate(points):
-                print(f"\n📍 Point {i+1}/{len(points)}: X={point['x']:.3f}, Y={point['y']:.3f}, Z={point['z']:.3f}")
                 
                 # Move to position
                 if not self.move_to_position(point):
@@ -412,7 +444,15 @@ class Scanner:
                     neg_str = f"{neg_peak:+7.3f}V" if neg_peak is not None else "N/A"
                     vpp_str = f"{vpp:7.3f}V" if vpp is not None else "N/A"
                     
-                    print(f"   📊 Pos: {pos_str}, Neg: {neg_str}, VPP: {vpp_str} [{method}]")
+                    print(f"   📊 Pos: {pos_str}, Neg: {neg_str}, VPP: {vpp_str} [{method}]", flush=True)
+                    
+                    # Display pressure values if calibration is available
+                    calibration_value = self.config['scan']['calibration_value']
+                    if calibration_value:
+                        pos_pressure_str = f"{pos_peak/calibration_value:+7.3f}MPa" if pos_peak is not None else "N/A"
+                        neg_pressure_str = f"{neg_peak/calibration_value:+7.3f}MPa" if neg_peak is not None else "N/A"
+                        vpp_pressure_str = f"{vpp/calibration_value:7.3f}MPa" if vpp is not None else "N/A"
+                        print(f"   🔧 Pressure: Pos: {pos_pressure_str}, Neg: {neg_pressure_str}, VPP: {vpp_pressure_str}", flush=True)
                     
                     # Save to CSV
                     with open(csv_file, 'a', newline='') as f:
@@ -423,7 +463,7 @@ class Scanner:
                             datetime.now().isoformat()
                         ])
                 else:
-                    print("   ❌ No measurement available")
+                    print("   ❌ No measurement available", flush=True)
                     
                     # Save empty measurement
                     with open(csv_file, 'a', newline='') as f:
@@ -439,7 +479,7 @@ class Scanner:
                 remaining = (elapsed / (i+1)) * (len(points) - i - 1)
                 print(f"   ⏱️  Progress: {((i+1)/len(points)*100):.1f}% | "
                       f"Elapsed: {elapsed//60:.0f}m {elapsed%60:.0f}s | "
-                      f"Remaining: {remaining//60:.0f}m {remaining%60:.0f}s")
+                      f"Remaining: {remaining//60:.0f}m {remaining%60:.0f}s", flush=True)
                 
         except KeyboardInterrupt:
             print("\n\n🛑 Scan interrupted by user")
@@ -574,6 +614,20 @@ class Scanner:
                             print(f"   Negative Peak: {neg_peak:+7.3f}V")
                         if vpp is not None:
                             print(f"   Peak-to-Peak:  {vpp:7.3f}V")
+                        
+                        # Display pressure values if calibration is available
+                        calibration_value = self.config['scan']['calibration_value']
+                        if calibration_value:
+                            print(f"📊 Pressure Measurement (using {calibration_value:.6f} V/MPa):")
+                            if pos_peak is not None:
+                                pos_pressure = pos_peak / calibration_value
+                                print(f"   Positive Peak: {pos_pressure:+7.3f}MPa")
+                            if neg_peak is not None:
+                                neg_pressure = neg_peak / calibration_value
+                                print(f"   Negative Peak: {neg_pressure:+7.3f}MPa")
+                            if vpp is not None:
+                                vpp_pressure = vpp / calibration_value
+                                print(f"   Peak-to-Peak:  {vpp_pressure:7.3f}MPa")
                     else:
                         print("❌ Failed to get voltage measurement")
                     continue

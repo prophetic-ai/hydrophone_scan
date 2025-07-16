@@ -37,7 +37,7 @@ hardware:
     average_count: 16         # 4, 16, 32, 64, 128 when mode is AVERAGE
 
 scan:
-  type: '2d_xy'  # 1d_x, 1d_y, 1d_z, 2d_xy, 2d_xz, 2d_yz
+  type: '2d_xy'  # 1d_x, 1d_y, 1d_z, 2d_xy, 2d_yx, 2d_xz, 2d_yz
   dimensions:
     x: 20  # mm
     y: 20  # mm 
@@ -50,44 +50,19 @@ scan:
     waveform_decimation: 1   # Save every Nth waveform (1 = all)
 ```
 
-**Step 2:** Run Scanner:
+**Voltage-to-Pressure Conversion:**
+The system automatically converts voltage measurements to pressure using the `calibration_value` specified in config.yaml:
+- Pressure (MPa) = Voltage (V) / calibration_value (V/MPa)
+- Current calibration value: 0.2743 V/MPa
+- Both voltage and pressure values are displayed during measurements and saved in reports
+- Separate heatmaps are generated for both voltage and pressure measurements
 
-```python
-python main.py
-```
-
-**Step 3:** Use the Interactive Menu System:
-
-The scanner now features a streamlined menu interface with the following options:
-1. Enter positioning mode
-2. Reload config
-3. Start scan
-4. Exit
-
-During positioning mode, use these commands:
-```
-x+/- <mm>  : Move in X
-y+/- <mm>  : Move in Y  
-z+/- <mm>  : Move in Z
-m          : Measure voltage at current position
-w          : View current waveform
-done       : Return to main menu
-```
-
-**Step 4:** After Positioning and Starting Scan, the System Will:
-- Use the current position as center point
-- Execute the scan pattern defined in config.yaml
-- Auto-scale voltage measurements (controlled by auto_scaling_enabled)
-- Generate pressure maps and analysis
-- Return to start position
-- Display interactive plots of results
-
-**Scan Output:**
-Results are saved with timestamp in scan_data/:
-
-- Raw voltage measurements and scan metadata
-- Complete waveform data (optional, controlled by save_options)
-- Pressure maps (positive and negative peaks)
-- FWHM calculations when applicable
-- Updated configuration file with scan center position
-
+**Scan Patterns:**
+The system supports different scan patterns with optimized movement orders:
+- **1D scans** (1d_x, 1d_y, 1d_z): Linear movement along single axis
+- **2D scans**: Snake/raster pattern for efficient scanning
+  - **2d_xy**: X is primary axis, Y is secondary (scan X first, then move Y)
+  - **2d_yx**: Y is primary axis, X is secondary (scan Y first, then move X)
+  - **2d_xz**: X is primary axis, Z is secondary
+  - **2d_yz**: Y is primary axis, Z is secondary
+- **3D scans** (xyz): 3D snake pattern with alternating directions
