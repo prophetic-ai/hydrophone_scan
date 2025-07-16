@@ -1,3 +1,4 @@
 /hydro/*
 /_pycache_/* 
 venv/*
+/scan_data/*

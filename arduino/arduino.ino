@@ -101,8 +101,8 @@ void setup() {
   * Red
   * Yellow
   */
-digitalWrite(EnablePin, LOW);  //motors on
-// digitalWrite(EnablePin, HIGH);  //motors off
+digitalWrite(EnablePin, HIGH);  //motors off - start with motors disabled to reduce noise
+// digitalWrite(EnablePin, LOW);  //motors on
 
 
   // Limit switches are low when triggered
@@ -349,6 +349,9 @@ void HomeMotors()
                   }  
                 }
       } //end while loop which moved to center of tank    
+  
+  // Disable motors after homing to reduce noise
+  digitalWrite(EnablePin, HIGH);
 }//end HomeMotors()
  
 
@@ -519,6 +522,26 @@ void select_movement() {  //Can modify this to call move functions
   }
   else if (strcmp(axis, "h") == 0) {
      HomeMotors();
-    }
+  }
+  else if (strcmp(axis, "e") == 0) {
+     enable_motors();
+  }
+  else if (strcmp(axis, "d") == 0) {
+     disable_motors();
+  }
   }
   } // end select_movement
+
+//==================
+
+void enable_motors() {
+  digitalWrite(EnablePin, LOW);  // LOW enables motors
+  Serial.print("Motors enabled\n");
+}
+
+//==================
+
+void disable_motors() {
+  digitalWrite(EnablePin, HIGH);  // HIGH disables motors
+  Serial.print("Motors disabled\n");
+}
