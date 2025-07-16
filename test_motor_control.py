@@ -3,20 +3,25 @@
 Test script for motor enable/disable functionality
 """
 
+import sys
+import os
 import time
-import json
-from hardware import HardwareController
+
+# Add the current directory to Python path to import local modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from motor_controller import MotorController
+from config import load_config
 
 def test_motor_control():
-    """Test motor enable/disable functionality"""
+    """Test basic motor control functionality"""
+    config = load_config()
     
-    # Load configuration
-    with open('config.json', 'r') as f:
-        config = json.load(f)
+    # Get Arduino port from config
+    arduino_port = config['hardware']['arduino_port']
     
     # Initialize hardware controller
-    arduino_port = "/dev/cu.usbmodem1401"  # Adjust if needed
-    hw = HardwareController(arduino_port=arduino_port, config=config)
+    hw = MotorController(arduino_port=arduino_port, config=config)
     
     print("Testing motor control functionality...")
     print("=" * 50)
