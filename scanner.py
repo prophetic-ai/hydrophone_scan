@@ -23,6 +23,90 @@ from oscilloscope_reader import OscilloscopeReader
 from scan_postprocessing import ScanPostProcessor
 from config import load_config
 
+class ScanDataCollector:
+    """Custom object to collect all scan measurement data before saving"""
+    
+    def __init__(self):
+        self.measurements = []
+        self.scan_start_time = None
+        self.scan_end_time = None
+        
+    def start_scan(self):
+        """Mark the start of data collection"""
+        self.scan_start_time = time.time()
+        self.measurements = []
+        
+    def add_measurement(self, point_num: int, position: Dict[str, float], 
+                       voltage_data: Optional[Dict], measurement_timestamp: str):
+        """Add a single measurement to the collection"""
+        if voltage_data:
+            measurement = {
+                'point_num': point_num,
+                'x_mm': position['x'],
+                'y_mm': position['y'],
+                'z_mm': position['z'],
+                'positive_peak_v': voltage_data['positive_peak'],
+                'negative_peak_v': voltage_data['negative_peak'],
+                'peak_to_peak_v': voltage_data['peak_to_peak'],
+                'method': voltage_data['method'],
+                'timestamp': measurement_timestamp
+            }
+        else:
+            # Failed measurement
+            measurement = {
+                'point_num': point_num,
+                'x_mm': position['x'],
+                'y_mm': position['y'],
+                'z_mm': position['z'],
+                'positive_peak_v': None,
+                'negative_peak_v': None,
+                'peak_to_peak_v': None,
+                'method': 'FAILED',
+                'timestamp': measurement_timestamp
+            }
+        
+        self.measurements.append(measurement)
+        
+    def end_scan(self):
+        """Mark the end of data collection"""
+        self.scan_end_time = time.time()
+        
+    def get_scan_duration(self) -> float:
+        """Get total scan duration in seconds"""
+        if self.scan_start_time and self.scan_end_time:
+            return self.scan_end_time - self.scan_start_time
+        return 0.0
+        
+    def get_successful_measurements(self) -> int:
+        """Get count of successful measurements"""
+        return len([m for m in self.measurements if m['method'] != 'FAILED'])
+        
+    def save_to_csv(self, csv_file: Path):
+        """Save all collected measurements to CSV file"""
+        print(f"💾 Saving {len(self.measurements)} measurements to CSV...")
+        
+        with open(csv_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            # Write header
+            writer.writerow(['point_num', 'x_mm', 'y_mm', 'z_mm', 'positive_peak_v', 
+                           'negative_peak_v', 'peak_to_peak_v', 'method', 'timestamp'])
+            
+            # Write all measurements
+            for measurement in self.measurements:
+                writer.writerow([
+                    measurement['point_num'],
+                    measurement['x_mm'],
+                    measurement['y_mm'],
+                    measurement['z_mm'],
+                    measurement['positive_peak_v'],
+                    measurement['negative_peak_v'],
+                    measurement['peak_to_peak_v'],
+                    measurement['method'],
+                    measurement['timestamp']
+                ])
+        
+        print(f"✅ Data saved to {csv_file}")
+
 class Scanner:
     def __init__(self, config_path: str = 'config.yaml'):
         """Initialize hydrophone scanner with configuration"""
@@ -404,19 +488,15 @@ class Scanner:
         with open(scan_dir / 'scan_config.json', 'w') as f:
             json.dump(config_data, f, indent=2)
         
-        # Initialize CSV file
+        # Initialize data collector
+        data_collector = ScanDataCollector()
         csv_file = scan_dir / 'scan_data.csv'
-        with open(csv_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['point_num', 'x_mm', 'y_mm', 'z_mm', 'positive_peak_v', 
-                           'negative_peak_v', 'peak_to_peak_v', 'method', 'timestamp'])
         
         # Execute scan
         print(f"\n🚀 Starting scan...")
         print("=" * 70)
         
-        start_time = time.time()
-        successful_points = 0
+        data_collector.start_scan()
         
         try:
             for i, point in enumerate(points):
@@ -431,9 +511,12 @@ class Scanner:
                 
                 # Take measurement
                 voltage_data = self.sample_voltage_detailed()
+                measurement_timestamp = datetime.now().isoformat()
+                
+                # Add measurement to collector
+                data_collector.add_measurement(i+1, point, voltage_data, measurement_timestamp)
+                
                 if voltage_data:
-                    successful_points += 1
-                    
                     # Display measurement
                     pos_peak = voltage_data['positive_peak']
                     neg_peak = voltage_data['negative_peak']
@@ -453,29 +536,11 @@ class Scanner:
                         neg_pressure_str = f"{neg_peak/calibration_value:+7.3f}MPa" if neg_peak is not None else "N/A"
                         vpp_pressure_str = f"{vpp/calibration_value:7.3f}MPa" if vpp is not None else "N/A"
                         print(f"   🔧 Pressure: Pos: {pos_pressure_str}, Neg: {neg_pressure_str}, VPP: {vpp_pressure_str}", flush=True)
-                    
-                    # Save to CSV
-                    with open(csv_file, 'a', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow([
-                            i+1, point['x'], point['y'], point['z'],
-                            pos_peak, neg_peak, vpp, method,
-                            datetime.now().isoformat()
-                        ])
                 else:
                     print("   ❌ No measurement available", flush=True)
-                    
-                    # Save empty measurement
-                    with open(csv_file, 'a', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow([
-                            i+1, point['x'], point['y'], point['z'],
-                            None, None, None, 'FAILED',
-                            datetime.now().isoformat()
-                        ])
                 
                 # Progress update
-                elapsed = time.time() - start_time
+                elapsed = time.time() - data_collector.scan_start_time
                 remaining = (elapsed / (i+1)) * (len(points) - i - 1)
                 print(f"   ⏱️  Progress: {((i+1)/len(points)*100):.1f}% | "
                       f"Elapsed: {elapsed//60:.0f}m {elapsed%60:.0f}s | "
@@ -483,6 +548,12 @@ class Scanner:
                 
         except KeyboardInterrupt:
             print("\n\n🛑 Scan interrupted by user")
+        finally:
+            # Always save data, even if interrupted
+            data_collector.end_scan()
+            
+            # Save all collected data to CSV
+            data_collector.save_to_csv(csv_file)
         
         # Generate heatmaps
         self.generate_heatmaps(csv_file, scan_dir, axes)
@@ -492,7 +563,9 @@ class Scanner:
         self.post_processor.export_data_formats(csv_file, scan_dir)
         
         # Scan complete
-        total_time = time.time() - start_time
+        total_time = data_collector.get_scan_duration()
+        successful_points = data_collector.get_successful_measurements()
+        
         print(f"\n" + "="*70)
         print("SCAN COMPLETE")
         print("="*70)
