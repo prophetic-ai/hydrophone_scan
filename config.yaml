@@ -26,7 +26,7 @@ scan:
     y: 2  # mm
     z: 0   # mm
     resolution: 0.5  # mm
-  calibration_value: 0.2743  # V/MPa
+  calibration_value: 0.2545  # V/MPa
   base_path: './scan_data'
   save_options:
     save_waveforms: true # Enable/disable saving of waveforms

@@ -5,10 +5,10 @@ Handles Arduino communication for stepper motor control.
 
 import serial
 import time
-import logging
 from typing import Dict, Optional
 from tqdm import tqdm
-
+from datetime import datetime
+from pathlib import Path
 
 class MotorController:
 
@@ -17,6 +17,10 @@ class MotorController:
         self.config = config
         self.arduino: Optional[serial.Serial] = None
         self.current_position: Dict[str, float] = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        
+        # Logging setup - will be initialized when scan starts
+        self.log_file = None
+        self.logging_enabled = False
         
         if self.config:
             self.MM_PER_STEP = {
@@ -30,10 +34,56 @@ class MotorController:
 
         self._setup_connections()
 
+    def start_scan_logging(self, scan_dir: Path):
+        """Start logging to file in the scan directory"""
+        # Create log file in scan directory
+        self.log_file = scan_dir / 'motor_controller.log'
+        self.logging_enabled = True
+        
+        # Write initial log entry
+        initial_message = f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Motor controller scan logging started - Log file: {self.log_file}"
+        with open(self.log_file, 'w') as f:  # Use 'w' to create new file
+            f.write(initial_message + '\n')
+            f.flush()
+        print(f"📝 Motor logging started: {self.log_file}")
+
+    def stop_scan_logging(self):
+        """Stop logging to file"""
+        if self.logging_enabled and self.log_file:
+            self._log_and_print("Motor controller scan logging ended")
+            print(f"📝 Motor logging saved: {self.log_file}")
+        self.logging_enabled = False
+        self.log_file = None
+
+    def _setup_logging(self):
+        """Setup logging to file with timestamps - REMOVED, now handled by start_scan_logging"""
+        pass
+
+    def _log_and_print(self, message: str):
+        """Log message to both file and console with timestamp"""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]  # Include milliseconds
+        formatted_message = f"[{timestamp}] {message}"
+        
+        # Write to log file only if logging is enabled
+        if self.logging_enabled and self.log_file:
+            try:
+                with open(self.log_file, 'a') as f:
+                    f.write(formatted_message + '\n')
+                    f.flush()  # Ensure immediate write
+            except Exception as e:
+                print(f"Logging error: {e}")
+        
+        # Also print to console
+        tqdm.write(formatted_message)
+
+    def _format_position(self, position: Dict[str, float]) -> Dict[str, float]:
+        """Convert numpy types to regular floats for cleaner logging"""
+        return {axis: float(pos) for axis, pos in position.items()}
+
     def _setup_connections(self) -> None:
         """Establish Arduino connection"""
         try:
-            print("\nConnecting to Arduino...")
+            print("Connecting to Arduino...")
             print(f"Attempting to connect to port: {self.arduino_port}")
             self.arduino = serial.Serial(
                 port=self.arduino_port,
@@ -66,7 +116,7 @@ class MotorController:
             
             # Be more flexible with the response - check for "Arduino is ready" with any line endings
             if not response:
-                print("\n" + "="*60)
+                print("="*60)
                 print("❌ NO ARDUINO FIRMWARE DETECTED")
                 print("="*60)
                 print("The Arduino is connected but not responding.")
@@ -81,7 +131,9 @@ class MotorController:
                 print("="*60)
                 raise ConnectionError("Arduino firmware not uploaded - see instructions above")
             elif "Arduino is ready" in response:
-                print("✅ Arduino connected successfully")
+                # Ensure motors remain disabled by default on connect
+                self.disable_motors()
+                print("✅ Arduino connected successfully (motors disabled)")
             else:
                 print(f"⚠️  Arduino responded but with unexpected message: '{response}'")
                 print("Continuing anyway - this might still work...")
@@ -96,7 +148,7 @@ class MotorController:
             raise ValueError(f"Invalid axis: {axis}")
         
         if not self.arduino:
-            tqdm.write("Arduino not connected")
+            self._log_and_print("Arduino not connected")
             return False
 
         try:
@@ -106,14 +158,47 @@ class MotorController:
             steps = round(distance / self.MM_PER_STEP[axis])
             direction = '+' if distance > 0 else '-'
             command = f"<{axis},{direction},{abs(steps)}>"
+            
+            # Debug logging
+            self._log_and_print(f"Sending command: {command} (distance: {distance:+.3f}mm)")
+            
+            # Clear any buffered data before sending command
+            if self.arduino.in_waiting > 0:
+                buffered_data = self.arduino.read_all().decode('utf-8', errors='ignore')
+                self._log_and_print(f"Cleared buffer before command: '{buffered_data}'")
+            
             self.arduino.write(command.encode())
             self.arduino.flush()
             
             # Wait for movement completion (Arduino will send response)
-            response = self.arduino.readline().decode().strip()
+            try:
+                # Give Arduino time to process and respond
+                time.sleep(0.1)
+                
+                response = self.arduino.readline().decode().strip()
+                self._log_and_print(f"Arduino response: '{response}'")
+                
+                # Check if response matches expected format (axis + direction + steps)
+                expected_response = f"{axis}{direction}{abs(steps)}"
+                if response != expected_response:
+                    self._log_and_print(f"⚠️  Unexpected response! Expected: '{expected_response}', Got: '{response}'")
+                
+                # Check if response indicates an error or limit switch hit
+                if "limit" in response.lower() or "reached" in response.lower():
+                    self._log_and_print(f"⚠️  Limit switch detected during movement!")
+                    # Don't update position tracking if limit was hit
+                    # self.disable_motors()
+                    return False
+                    
+            except Exception as e:
+                self._log_and_print(f"Communication error: {e}")
+                self.disable_motors()
+                return False
             
             # Add position tracking
+            old_position = self.current_position[axis]
             self.current_position[axis] += distance
+            self._log_and_print(f"Position updated: {axis} {old_position:.3f} → {self.current_position[axis]:.3f}mm")
             
             # Disable motors after movement to reduce noise
             self.disable_motors()
@@ -121,13 +206,13 @@ class MotorController:
             return True
 
         except serial.SerialException as e:
-            tqdm.write(f"Movement error: {e}")
+            self._log_and_print(f"Movement error: {e}")
             return False
 
     def enable_motors(self) -> bool:
         """Enable stepper motors"""
         if not self.arduino:
-            tqdm.write("Arduino not connected")
+            self._log_and_print("Arduino not connected")
             return False
             
         try:
@@ -135,15 +220,21 @@ class MotorController:
             self.arduino.write(command.encode())
             self.arduino.flush()
             time.sleep(0.1)  # Small delay for motor enable
+            
+            # Clear the response to avoid interference with movement commands
+            if self.arduino.in_waiting > 0:
+                response = self.arduino.read_all().decode('utf-8', errors='ignore').strip()
+                self._log_and_print(f"Motor enable response: '{response}'")
+            
             return True
         except serial.SerialException as e:
-            tqdm.write(f"Motor enable error: {e}")
+            self._log_and_print(f"Motor enable error: {e}")
             return False
 
     def disable_motors(self) -> bool:
         """Disable stepper motors to reduce noise"""
         if not self.arduino:
-            tqdm.write("Arduino not connected")
+            self._log_and_print("Arduino not connected")
             return False
             
         try:
@@ -151,19 +242,25 @@ class MotorController:
             self.arduino.write(command.encode())
             self.arduino.flush()
             time.sleep(0.1)  # Small delay for motor disable
+            
+            # Clear the response to avoid interference with movement commands
+            if self.arduino.in_waiting > 0:
+                response = self.arduino.read_all().decode('utf-8', errors='ignore').strip()
+                self._log_and_print(f"Motor disable response: '{response}'")
+            
             return True
         except serial.SerialException as e:
-            tqdm.write(f"Motor disable error: {e}")
+            self._log_and_print(f"Motor disable error: {e}")
             return False
 
     def home_motors(self) -> bool:
         """Home all motors to center position"""
         if not self.arduino:
-            tqdm.write("Arduino not connected")
+            self._log_and_print("Arduino not connected")
             return False
             
         try:
-            print("Homing motors...")
+            self._log_and_print("Homing motors...")
             command = "<h,+,0>"  # Home command
             self.arduino.write(command.encode())
             self.arduino.flush()
@@ -171,14 +268,14 @@ class MotorController:
             # Wait for homing to complete - this can take a while
             # The Arduino will send a response when done
             response = self.arduino.readline().decode().strip()
-            print(f"Homing complete: {response}")
+            self._log_and_print(f"Homing complete: {response}")
             
             # Reset position tracking to center
             self.current_position = {'x': 0.0, 'y': 0.0, 'z': 0.0}
             
             return True
         except serial.SerialException as e:
-            tqdm.write(f"Homing error: {e}")
+            self._log_and_print(f"Homing error: {e}")
             return False
 
     def move_to_position(self, target_position: Dict[str, float]) -> bool:
@@ -191,6 +288,12 @@ class MotorController:
             delta = target_position[axis] - current_pos[axis]
             if abs(delta) > 0.001:  # Only move if difference > 1 micron
                 movements[axis] = delta
+        
+        # Log the movement plan (clean up numpy types) - current position first
+        if movements:
+            self._log_and_print(f"Current position: {self._format_position(current_pos)}")
+            self._log_and_print(f"Moving to position: {self._format_position(target_position)}")
+            self._log_and_print(f"Required movements: {self._format_position(movements)}")
         
         # Execute movements
         for axis, delta in movements.items():
@@ -205,7 +308,7 @@ class MotorController:
 
     def close(self):
         """Close motor controller connections"""
-        print("\nClosing motor controller connections...")
+        print("Closing motor controller connections...")
         if self.arduino and self.arduino.is_open:
             self.arduino.close()
             print("Arduino disconnected")

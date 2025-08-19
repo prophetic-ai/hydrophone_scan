@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 import pyvisa
 from typing import Dict, Optional, Any
+import os
 
 
 class OscilloscopeReader:
@@ -18,6 +19,15 @@ class OscilloscopeReader:
         self.scope_settings: Dict[str, Optional[str]] = {}
         self.consecutive_errors = 0
         self.timeout = timeout
+        # Tunable delays (can be overridden by environment if needed)
+        try:
+            self.connect_retry_delay_s = float(os.getenv('SCOPE_CONNECT_RETRY_DELAY_S', '1.0'))
+            self.connect_post_chdr_delay_s = float(os.getenv('SCOPE_POST_CHDR_DELAY_S', '0.5'))
+            self.waveform_fetch_delay_s = float(os.getenv('SCOPE_WAVEFORM_FETCH_DELAY_S', '0.5'))
+        except Exception:
+            self.connect_retry_delay_s = 1.0
+            self.connect_post_chdr_delay_s = 0.5
+            self.waveform_fetch_delay_s = 0.5
         
         if scope_address:
             self._connect()
@@ -43,7 +53,7 @@ class OscilloscopeReader:
             for attempt in range(3):
                 try:
                     self.scope.write('CHDR OFF')
-                    time.sleep(0.5)
+                    time.sleep(self.connect_post_chdr_delay_s)
                     
                     # Test basic communication
                     idn = self.scope.query('*IDN?')
@@ -53,7 +63,7 @@ class OscilloscopeReader:
                     
                 except Exception as e:
                     print(f"Connection attempt {attempt + 1} failed: {e}")
-                    time.sleep(1)
+                    time.sleep(self.connect_retry_delay_s)
             
             if not connected:
                 print("❌ Could not establish stable oscilloscope connection")
@@ -184,7 +194,7 @@ class OscilloscopeReader:
             if pos_peak is None or neg_peak is None:
                 try:
                     self.scope.write('C1:WF? DAT1')
-                    time.sleep(0.5)
+                    time.sleep(self.waveform_fetch_delay_s)
                     
                     raw_data = self.scope.read_raw()
                     

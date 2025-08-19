@@ -324,7 +324,40 @@ class Scanner:
                 
                 for y_offset in current_y_vals:
                     points.append({'x': start_pos['x'], 'y': start_pos['y'] + y_offset, 'z': start_pos['z'] + z_offset})
-                    
+            
+        elif axes == 'zy':
+            # Snake pattern for ZY scan (Z first, then Y)
+            y_distance = distances['y']
+            z_distance = distances['z']
+            
+            # Generate Z values
+            if z_distance == 0:
+                z_vals = [0]
+            elif z_distance > 0:
+                z_vals = np.arange(0, z_distance + increment/2, increment)
+            else:
+                z_vals = np.arange(0, z_distance - increment/2, -increment)
+            
+            # Generate Y values
+            if y_distance == 0:
+                y_vals = [0]
+            elif y_distance > 0:
+                y_vals = np.arange(0, y_distance + increment/2, increment)
+            else:
+                y_vals = np.arange(0, y_distance - increment/2, -increment)
+            
+            # Create snake pattern: alternate Z direction for each Y row
+            for i, y_offset in enumerate(y_vals):
+                if i % 2 == 0:
+                    # Even rows: scan Z in normal direction
+                    current_z_vals = z_vals
+                else:
+                    # Odd rows: scan Z in reverse direction
+                    current_z_vals = z_vals[::-1]
+                
+                for z_offset in current_z_vals:
+                    points.append({'x': start_pos['x'], 'y': start_pos['y'] + y_offset, 'z': start_pos['z'] + z_offset})
+            
         elif axes == 'xyz':
             # Snake pattern for XYZ scan
             x_distance = distances['x']
@@ -377,6 +410,63 @@ class Scanner:
         """Move to absolute position"""
         return self.motor_controller.move_to_position(target_position)
 
+    def _check_and_update_live_heatmap(self, current_point_idx: int, points: List[Dict[str, float]], 
+                                      data_collector, scan_dir: Path, axes: str):
+        """Check if we completed a row and update live heatmap"""
+        
+        # Only generate heatmaps for 2D scans with calibration
+        if axes not in ['xy', 'yx', 'xz', 'yz', 'zy', 'xyz'] or not self.config.get('scan', {}).get('calibration_value'):
+            return
+        
+        # Determine the primary and secondary axes for row detection
+        if axes in ['xy', 'xyz']:
+            primary_axis, secondary_axis = 'x', 'y'
+        elif axes == 'yx':
+            primary_axis, secondary_axis = 'y', 'x'
+        elif axes == 'xz':
+            primary_axis, secondary_axis = 'x', 'z'
+        elif axes == 'yz':
+            primary_axis, secondary_axis = 'y', 'z'
+        elif axes == 'zy':
+            primary_axis, secondary_axis = 'z', 'y'
+        else:
+            return
+        
+        # Check if we just completed a row by looking at the next point
+        if current_point_idx < len(points) - 1:
+            current_point = points[current_point_idx]
+            next_point = points[current_point_idx + 1]
+            
+            # Row completed if the secondary axis changes
+            row_completed = current_point[secondary_axis] != next_point[secondary_axis]
+        else:
+            # Last point - always generate heatmap
+            row_completed = True
+        
+        if row_completed:
+            try:
+                # Convert data collector measurements to the format expected by heatmap generator
+                heatmap_data = []
+                for measurement in data_collector.measurements:
+                    if measurement['method'] != 'FAILED':
+                        heatmap_data.append({
+                            'x': measurement['x_mm'],
+                            'y': measurement['y_mm'], 
+                            'z': measurement['z_mm'],
+                            'pos_peak': measurement['positive_peak_v'],
+                            'neg_peak': measurement['negative_peak_v'],
+                            'method': measurement['method']
+                        })
+                
+                # Generate live heatmap
+                if len(heatmap_data) > 1:  # Need at least 2 points
+                    self.post_processor.create_live_positive_pressure_heatmap(
+                        heatmap_data, primary_axis, secondary_axis, scan_dir
+                    )
+                    
+            except Exception as e:
+                print(f"   ⚠️  Failed to generate live heatmap: {e}")
+
     def generate_heatmaps(self, csv_file: Path, scan_dir: Path, axes: str):
         """Generate heatmap visualizations from scan data"""
         self.post_processor.generate_heatmaps(csv_file, scan_dir, axes)
@@ -387,16 +477,17 @@ class Scanner:
         print("AUTOMATED AREA SCAN SETUP")
         print("="*70)
         
-        # Show current position
+        # Show current position and store as starting position
         current_pos = self.motor_controller.get_current_position()
+        starting_position = current_pos.copy()  # Store the original starting position
         print(f"\nCurrent Position: X={current_pos['x']:.3f}mm, Y={current_pos['y']:.3f}mm, Z={current_pos['z']:.3f}mm")
         
         # Get axis configuration
         print("\nAxis Configuration:")
-        print("Available axis combinations: x, y, z, xy, yx, xz, yz, xyz")
+        print("Available axis combinations: x, y, z, xy, yx, xz, yz, zy, xyz")
         axes = input("Enter axis combination (e.g., 'xy' for X-Y scan): ").strip().lower()
         
-        if axes not in ['x', 'y', 'z', 'xy', 'yx', 'xz', 'yz', 'xyz']:
+        if axes not in ['x', 'y', 'z', 'xy', 'yx', 'xz', 'yz', 'zy', 'xyz']:
             print("❌ Invalid axis combination")
             return
         
@@ -435,7 +526,7 @@ class Scanner:
         print(f"  Total points: {len(points)}")
         
         # Show scan pattern info
-        if axes in ['xy', 'yx', 'xz', 'yz', 'xyz']:
+        if axes in ['xy', 'yx', 'xz', 'yz', 'zy', 'xyz']:
             print(f"  Scan pattern: Snake/raster (alternating direction per row)")
         
         # Show scan bounds
@@ -474,7 +565,7 @@ class Scanner:
             'scan_distances': distances,
             'increment': increment,
             'total_points': len(points),
-            'scan_pattern': 'snake' if axes in ['xy', 'yx', 'xz', 'yz', 'xyz'] else 'linear',
+            'scan_pattern': 'snake' if axes in ['xy', 'yx', 'xz', 'yz', 'zy', 'xyz'] else 'linear',
             'arduino_config': {
                 'port': self.config['hardware']['arduino_port'],
                 'steps_per_mm': self.config['hardware']['steps_per_mm']
@@ -492,6 +583,9 @@ class Scanner:
         data_collector = ScanDataCollector()
         csv_file = scan_dir / 'scan_data.csv'
         
+        # Start motor controller logging
+        self.motor_controller.start_scan_logging(scan_dir)
+        
         # Execute scan
         print(f"\n🚀 Starting scan...")
         print("=" * 70)
@@ -507,7 +601,11 @@ class Scanner:
                     continue
                 
                 # Wait for stabilization
-                time.sleep(0.5)
+                settle_seconds = 1
+                cfg_val = self.config.get('scan', {}).get('settle_seconds')
+                if isinstance(cfg_val, (int, float)) and cfg_val >= 0:
+                    settle_seconds = float(cfg_val)
+                time.sleep(settle_seconds)
                 
                 # Take measurement
                 voltage_data = self.sample_voltage_detailed()
@@ -517,7 +615,7 @@ class Scanner:
                 data_collector.add_measurement(i+1, point, voltage_data, measurement_timestamp)
                 
                 if voltage_data:
-                    # Display measurement
+                    # Display measurement with coordinates
                     pos_peak = voltage_data['positive_peak']
                     neg_peak = voltage_data['negative_peak']
                     vpp = voltage_data['peak_to_peak']
@@ -527,7 +625,9 @@ class Scanner:
                     neg_str = f"{neg_peak:+7.3f}V" if neg_peak is not None else "N/A"
                     vpp_str = f"{vpp:7.3f}V" if vpp is not None else "N/A"
                     
-                    print(f"   📊 Pos: {pos_str}, Neg: {neg_str}, VPP: {vpp_str} [{method}]", flush=True)
+                    # Include coordinates in the log
+                    coord_str = f"X:{point['x']:6.2f}, Y:{point['y']:6.2f}, Z:{point['z']:6.2f}"
+                    print(f"   📊 [{coord_str}] Pos: {pos_str}, Neg: {neg_str}, VPP: {vpp_str} [{method}]", flush=True)
                     
                     # Display pressure values if calibration is available
                     calibration_value = self.config['scan']['calibration_value']
@@ -535,9 +635,14 @@ class Scanner:
                         pos_pressure_str = f"{pos_peak/calibration_value:+7.3f}MPa" if pos_peak is not None else "N/A"
                         neg_pressure_str = f"{neg_peak/calibration_value:+7.3f}MPa" if neg_peak is not None else "N/A"
                         vpp_pressure_str = f"{vpp/calibration_value:7.3f}MPa" if vpp is not None else "N/A"
-                        print(f"   🔧 Pressure: Pos: {pos_pressure_str}, Neg: {neg_pressure_str}, VPP: {vpp_pressure_str}", flush=True)
+                        print(f"   🔧 [{coord_str}] Pressure: Pos: {pos_pressure_str}, Neg: {neg_pressure_str}, VPP: {vpp_pressure_str}", flush=True)
                 else:
-                    print("   ❌ No measurement available", flush=True)
+                    # Include coordinates even for failed measurements
+                    coord_str = f"X:{point['x']:6.2f}, Y:{point['y']:6.2f}, Z:{point['z']:6.2f}"
+                    print(f"   ❌ [{coord_str}] No measurement available", flush=True)
+                
+                # Check if we completed a row and generate live heatmap
+                self._check_and_update_live_heatmap(i, points, data_collector, scan_dir, axes)
                 
                 # Progress update
                 elapsed = time.time() - data_collector.scan_start_time
@@ -552,6 +657,9 @@ class Scanner:
             # Always save data, even if interrupted
             data_collector.end_scan()
             
+            # Stop motor controller logging
+            self.motor_controller.stop_scan_logging()
+            
             # Save all collected data to CSV
             data_collector.save_to_csv(csv_file)
         
@@ -561,6 +669,19 @@ class Scanner:
         # Generate additional analysis
         self.post_processor.generate_summary_report(csv_file, scan_dir, config_data)
         self.post_processor.export_data_formats(csv_file, scan_dir)
+        
+        # Return to starting position
+        print(f"\n🔄 Returning to starting position...")
+        print(f"   Target: X={starting_position['x']:.3f}mm, Y={starting_position['y']:.3f}mm, Z={starting_position['z']:.3f}mm")
+        
+        return_success = self.move_to_position(starting_position)
+        if return_success:
+            print("✅ Successfully returned to starting position")
+        else:
+            print("❌ Failed to return to starting position")
+            # Show current position if return failed
+            current_pos_after = self.motor_controller.get_current_position()
+            print(f"   Current position: X={current_pos_after['x']:.3f}mm, Y={current_pos_after['y']:.3f}mm, Z={current_pos_after['z']:.3f}mm")
         
         # Scan complete
         total_time = data_collector.get_scan_duration()

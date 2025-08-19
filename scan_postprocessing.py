@@ -46,6 +46,8 @@ class ScanPostProcessor:
                 self._create_2d_heatmap(data, 'x', 'z', scan_dir)
             elif axes == 'yz':
                 self._create_2d_heatmap(data, 'y', 'z', scan_dir)
+            elif axes == 'zy':
+                self._create_2d_heatmap(data, 'z', 'y', scan_dir)
             elif axes == 'xyz':
                 # For 3D scans, create multiple 2D slices or use first two axes
                 print(f"📊 3D scan detected - creating X-Y heatmaps")
@@ -221,6 +223,88 @@ class ScanPostProcessor:
             if all_neg_pressure_values:
                 print(f"    • Negative pressure: {min(all_neg_pressure_values):.3f}MPa to {max(all_neg_pressure_values):.3f}MPa")
     
+    def create_live_positive_pressure_heatmap(self, data: List[Dict[str, Optional[float]]], 
+                                            x_axis: str, y_axis: str, scan_dir: Path) -> None:
+        """Create a live-updating positive pressure heatmap during scan"""
+        
+        # Filter data to only include successful measurements with positive peaks
+        valid_data = []
+        for d in data:
+            if (d[x_axis] is not None and d[y_axis] is not None and 
+                d['pos_peak'] is not None and d['method'] != 'FAILED'):
+                valid_data.append(d)
+        
+        if len(valid_data) < 2:
+            return  # Need at least 2 points for a heatmap
+        
+        # Extract coordinates and positive peak data
+        x_coords = [float(d[x_axis]) for d in valid_data]
+        y_coords = [float(d[y_axis]) for d in valid_data]
+        pos_peaks = [float(d['pos_peak']) for d in valid_data]
+        
+        # Convert to pressure if calibration available
+        if self.calibration_value:
+            pos_peaks_pressure = [peak / self.calibration_value for peak in pos_peaks]
+        else:
+            return  # Can't create pressure heatmap without calibration
+        
+        # Get unique coordinates for grid
+        unique_x = sorted(set(x_coords))
+        unique_y = sorted(set(y_coords))
+        
+        if len(unique_x) < 2 or len(unique_y) < 2:
+            return  # Need at least 2x2 grid for heatmap
+        
+        # Create coordinate to index mapping
+        x_to_idx = {x: i for i, x in enumerate(unique_x)}
+        y_to_idx = {y: i for i, y in enumerate(unique_y)}
+        
+        # Create grid for pressure
+        pos_grid_pressure = np.full((len(unique_y), len(unique_x)), np.nan)
+        
+        # Fill grid with data
+        for d in valid_data:
+            x_idx = x_to_idx[d[x_axis]]
+            y_idx = y_to_idx[d[y_axis]]
+            pos_grid_pressure[y_idx, x_idx] = d['pos_peak'] / self.calibration_value
+        
+        # Create the heatmap plot
+        plt.figure(figsize=(10, 8))
+        
+        vmin = min(pos_peaks_pressure)
+        vmax = max(pos_peaks_pressure)
+        
+        # Create extent
+        extent = (min(unique_x), max(unique_x), min(unique_y), max(unique_y))
+        
+        im = plt.imshow(pos_grid_pressure, 
+                      extent=extent,
+                      origin='lower', 
+                      cmap='RdYlBu_r',
+                      vmin=vmin, 
+                      vmax=vmax,
+                      interpolation='nearest')
+        
+        plt.colorbar(im, label='Pressure (MPa)')
+        plt.xlabel(f'{x_axis.upper()}-axis (mm)')
+        plt.ylabel(f'{y_axis.upper()}-axis (mm)')
+        
+        title_suffix = (
+            f"\nRange: {vmin:.3f}MPa to {vmax:.3f}MPa\n"
+            f"(Blue = Low, Red = High) - {len(valid_data)} points"
+        )
+        plt.title(f'Live Positive Peak Pressure Heatmap{title_suffix}')
+        
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Always save as the same filename to create updating effect
+        filename = 'live_positive_pressure_heatmap.png'
+        plt.savefig(scan_dir / filename, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"📊 Updated live heatmap: {len(valid_data)} points")
+
     def _create_heatmap_plot(self, grid: np.ndarray, unique_x: List[float], unique_y: List[float], 
                            values: List[float], x_axis: str, y_axis: str, voltage_type: str, 
                            scan_dir: Path, data: List[Dict[str, Optional[float]]], unit_type: str = 'voltage') -> None:
@@ -231,23 +315,32 @@ class ScanPostProcessor:
         vmax = max(values)
         
         # Choose colormap based on voltage type
-        if voltage_type == 'negative':
-            # For negative values, invert the colormap so most negative = blue, least negative = red
-            cmap = 'coolwarm_r'
-            if unit_type == 'voltage':
-                title_suffix = f"\nRange: {vmin:.3f}V to {vmax:.3f}V\n(Most negative = Blue, Least negative = Red)"
-                colorbar_label = 'Voltage (V)'
+        if unit_type == 'pressure':
+            # Use blue-red colormap for pressure
+            if voltage_type == 'negative':
+                cmap = 'RdYlBu_r'  # Blue to red
+                title_suffix = (
+                    f"\nRange: {vmin:.3f}MPa to {vmax:.3f}MPa\n"
+                    f"(Blue = Low, Red = High)"
+                )
             else:
-                title_suffix = f"\nRange: {vmin:.3f}MPa to {vmax:.3f}MPa\n(Most negative = Blue, Least negative = Red)"
-                colorbar_label = 'Pressure (MPa)'
+                cmap = 'RdYlBu_r'  # Blue to red
+                title_suffix = (
+                    f"\nRange: {vmin:.3f}MPa to {vmax:.3f}MPa\n"
+                    f"(Blue = Low, Red = High)"
+                )
+            colorbar_label = 'Pressure (MPa)'
         else:
-            cmap = 'coolwarm'
-            if unit_type == 'voltage':
-                title_suffix = f"\nRange: {vmin:.3f}V to {vmax:.3f}V"
-                colorbar_label = 'Voltage (V)'
+            # Use standard blue-to-red colormap for voltage
+            cmap = 'RdYlBu_r'  # Blue to red
+            
+            if voltage_type == 'negative':
+                title_suffix = (
+                    f"\nRange: {vmin:.3f}V to {vmax:.3f}V\n(Blue = Low, Red = High)"
+                )
             else:
-                title_suffix = f"\nRange: {vmin:.3f}MPa to {vmax:.3f}MPa"
-                colorbar_label = 'Pressure (MPa)'
+                title_suffix = f"\nRange: {vmin:.3f}V to {vmax:.3f}V\n(Blue = Low, Red = High)"
+            colorbar_label = 'Voltage (V)'
         
         # Create extent as tuple for proper type handling
         extent = (min(unique_x), max(unique_x), min(unique_y), max(unique_y))
@@ -273,15 +366,15 @@ class ScanPostProcessor:
         
         plt.grid(True, alpha=0.3)
         
-        # Add text annotations for data points
-        if unit_type == 'voltage':
-            peak_key = 'pos_peak' if voltage_type == 'positive' else 'neg_peak'
-        else:
-            peak_key = 'pos_peak_pressure' if voltage_type == 'positive' else 'neg_peak_pressure'
-            
-        for d in data:
-            if d[peak_key] is not None and d[x_axis] is not None and d[y_axis] is not None:
-                plt.plot(d[x_axis], d[y_axis], 'k.', markersize=2, alpha=0.5)
+        # Add text annotations for data points - REMOVED to clean up heatmap appearance
+        # if unit_type == 'voltage':
+        #     peak_key = 'pos_peak' if voltage_type == 'positive' else 'neg_peak'
+        # else:
+        #     peak_key = 'pos_peak_pressure' if voltage_type == 'positive' else 'neg_peak_pressure'
+        #     
+        # for d in data:
+        #     if d[peak_key] is not None and d[x_axis] is not None and d[y_axis] is not None:
+        #         plt.plot(d[x_axis], d[y_axis], 'k.', markersize=2, alpha=0.5)
         
         plt.tight_layout()
         plt.savefig(scan_dir / filename, dpi=300, bbox_inches='tight')

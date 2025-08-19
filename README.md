@@ -65,4 +65,5 @@ The system supports different scan patterns with optimized movement orders:
   - **2d_yx**: Y is primary axis, X is secondary (scan Y first, then move X)
   - **2d_xz**: X is primary axis, Z is secondary
   - **2d_yz**: Y is primary axis, Z is secondary
+  - **2d_zy**: Z is primary axis, Y is secondary
 - **3D scans** (xyz): 3D snake pattern with alternating directions
